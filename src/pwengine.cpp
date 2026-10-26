@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <pipewire/extensions/metadata.h>
+#include <pipewire/impl.h>
 #include <pipewire/pipewire.h>
 #include <spa/param/audio/format-utils.h>
 #include <spa/param/props.h>
@@ -375,11 +376,19 @@ bool PwEngine::start(QString *error) {
     m_notifier = std::make_unique<QSocketNotifier>(pw_loop_get_fd(m_loop), QSocketNotifier::Read);
     connect(m_notifier.get(), &QSocketNotifier::activated, this, &PwEngine::iterate);
 
-    m_context = pw_context_new(m_loop, pw_properties_new(PW_KEY_APP_NAME, "preamp", nullptr), 0);
+    // Ask RTKit for the realtime audio thread directly, as the PipeWire
+    // daemon does. A desktop portal that started before rtkit was installed
+    // reports a realtime budget of zero. PipeWire applies it as a hard limit
+    // of 0, and the kernel then kills preamp as soon as audio plays. The
+    // client config asks through the portal, so its realtime module stays out.
+    m_context = pw_context_new(m_loop, pw_properties_new(PW_KEY_APP_NAME, "preamp", "module.rt", "false", nullptr), 0);
     if (!m_context) {
         *error = QStringLiteral("could not create a PipeWire context");
         return false;
     }
+    // Without rtkit the module does not load, and preamp runs without
+    // realtime priority.
+    pw_context_load_module(m_context, "libpipewire-module-rt", "{ rtportal.enabled = false }", nullptr);
     m_core = pw_context_connect(m_context, nullptr, 0);
     if (!m_core) {
         *error = QStringLiteral("PipeWire is not running");
