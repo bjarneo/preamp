@@ -13,8 +13,8 @@ You need Omarchy 4.0.6 or later, with the Omarchy shell, PipeWire and WirePlumbe
 To install the release package:
 
 ```sh
-curl -LO https://github.com/bjarneo/preamp/releases/download/v0.1.2/preamp-0.1.2-1-x86_64.pkg.tar.zst
-sudo pacman -U preamp-0.1.2-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/bjarneo/preamp/releases/download/v0.1.3/preamp-0.1.3-1-x86_64.pkg.tar.zst
+sudo pacman -U preamp-0.1.3-1-x86_64.pkg.tar.zst
 systemctl --user enable --now preamp.service
 preamp shell install
 ```

@@ -4,11 +4,11 @@ preamp runs on Omarchy 4.0.6 or later, with the Omarchy shell, PipeWire and Wire
 
 ## Install the release package
 
-To install preamp 0.1.2, run:
+To install preamp 0.1.3, run:
 
 ```sh
-curl -LO https://github.com/bjarneo/preamp/releases/download/v0.1.2/preamp-0.1.2-1-x86_64.pkg.tar.zst
-sudo pacman -U preamp-0.1.2-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/bjarneo/preamp/releases/download/v0.1.3/preamp-0.1.3-1-x86_64.pkg.tar.zst
+sudo pacman -U preamp-0.1.3-1-x86_64.pkg.tar.zst
 systemctl --user enable --now preamp.service
 preamp shell install
 ```

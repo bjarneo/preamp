@@ -24,7 +24,7 @@
 
 namespace {
 
-const char *Version = "0.1.2";
+const char *Version = "0.1.3";
 
 QString windowSocket() {
     QString dir = qEnvironmentVariable("XDG_RUNTIME_DIR");
