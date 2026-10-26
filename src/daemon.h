@@ -59,6 +59,7 @@ private:
         uint32_t id = 0;
         uint32_t volumeNode = 0; // where loudness lives, through any tuning
         int priority = 0;
+        bool hardware = false; // a device, not a virtual sink
     };
     struct App {
         QString key, name, state;

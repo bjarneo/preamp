@@ -386,8 +386,10 @@ QVector<Daemon::Output> Daemon::outputs() const {
 
     // A DSP sink in front of a device, like Omarchy's speaker tuning, plays
     // into it through a stream named after itself. Pick the DSP sink and hide
-    // the device: playing straight into it would skip the tuning.
-    QHash<uint32_t, uint32_t> fronts; // virtual sink -> device sink
+    // the device: playing straight into it would skip the tuning. A sink in
+    // front of another DSP sink hides nothing, or a loopback that plays into
+    // the tuning would hide the tuning and take preamp's output.
+    QHash<uint32_t, uint32_t> fronts; // virtual sink -> the sink it plays into
     QSet<uint32_t> fronted;
     for (const PwEngine::Node &v : nodes) {
         if (!v.isSink() || v.deviceId != 0 || v.name == PwEngine::sinkName() || v.name.isEmpty())
@@ -403,10 +405,23 @@ QVector<Daemon::Output> Daemon::outputs() const {
             const uint32_t target = m_engine.linkedSinkOf(s.id);
             if (target && target != v.id) {
                 fronts.insert(v.id, target);
-                fronted.insert(target);
+                if (nodes.value(target).deviceId)
+                    fronted.insert(target);
             }
         }
     }
+
+    // Loudness lives on the device at the end of the chain, through every
+    // DSP sink in front of it.
+    auto deviceOf = [&](const PwEngine::Node &n) {
+        PwEngine::Node device = n;
+        QSet<uint32_t> seen{n.id};
+        while (fronts.contains(device.id) && !seen.contains(fronts.value(device.id))) {
+            device = nodes.value(fronts.value(device.id));
+            seen.insert(device.id);
+        }
+        return device;
+    };
 
     auto kindOf = [&](const PwEngine::Node &n) -> QString {
         const PwEngine::Device d = m_engine.devices().value(n.deviceId);
@@ -440,10 +455,11 @@ QVector<Daemon::Output> Daemon::outputs() const {
             continue;
         if (!m_engine.isAvailable(n) && n.name != m_output)
             continue;
-        const PwEngine::Node device = fronts.contains(n.id) ? nodes.value(fronts.value(n.id)) : n;
+        const PwEngine::Node device = deviceOf(n);
         Output o;
         o.name = n.name;
         o.id = n.id;
+        o.hardware = n.deviceId != 0;
         o.volumeNode = device.id;
         o.kind = kindOf(device);
         o.label = fronts.contains(n.id) && !n.description.isEmpty() ? n.description : labelOf(device, o.kind);
@@ -639,7 +655,9 @@ void Daemon::onGraph() {
     int arrivedPriority = INT_MIN;
     for (const Output &o : list) {
         now.insert(o.name);
-        if (!m_knownSinks.contains(o.name) && o.priority > arrivedPriority) {
+        // Only a device is plugged in. A virtual sink, like a loopback or
+        // another app's equalizer, appears without anyone picking it.
+        if (!m_knownSinks.contains(o.name) && o.hardware && o.priority > arrivedPriority) {
             arrived = o.name;
             arrivedPriority = o.priority;
         }
