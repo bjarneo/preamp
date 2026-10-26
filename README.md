@@ -13,38 +13,33 @@ You need Omarchy with the Omarchy shell, PipeWire and WirePlumber.
 To install the release package:
 
 ```sh
-curl -LO https://github.com/bjarneo/preamp/releases/download/v0.1.1/preamp-0.1.1-1-x86_64.pkg.tar.zst
-sudo pacman -U preamp-0.1.1-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/bjarneo/preamp/releases/download/v0.1.2/preamp-0.1.2-1-x86_64.pkg.tar.zst
+sudo pacman -U preamp-0.1.2-1-x86_64.pkg.tar.zst
 systemctl --user enable --now preamp.service
 preamp shell install
 ```
 
 `pacman` installs the dependencies. The service starts now and at each login. The last command puts the preamp widget on the Omarchy bar.
 
-To build from source instead:
+To build from source, to add a key that opens the window, to update or to uninstall, see [Install](docs/install.md).
 
-```sh
-git clone https://github.com/bjarneo/preamp.git
-cd preamp
-./bin/install
+### Install with an agent
+
+A coding agent on your machine can do the install for you. Paste this prompt into Claude Code, Codex, opencode or another agent:
+
+```text
+Install preamp, the system audio equalizer for Omarchy, on this machine.
+Follow "Steps for agents" in https://github.com/bjarneo/preamp/blob/main/docs/install.md.
+Ask me before you run a command that needs root.
+When you finish, run `preamp status` and show me the output.
 ```
-
-`bin/install` builds the package with `makepkg`, installs it, starts the service and puts the widget on the bar.
-
-To open the window with `SUPER ALT E`, add this line to `~/.config/hypr/bindings.lua`:
-
-```lua
-o.bind("SUPER + ALT + E", "preamp", { launch = "preamp" })
-```
-
-You can also open preamp from the app launcher.
 
 ## Start in one minute
 
 1. Click the preamp widget in the bar, then click `Bass boost`. The sound changes at once.
 2. Right-click the widget to bypass the equalizer. Right-click again to hear the difference.
 3. To correct your headphones, run `preamp autoeq "hd 650"` with the name of your model.
-4. Press `SUPER ALT E` to open the window, then press `tab` for the detailed views.
+4. Open preamp from the app launcher, then press `tab` for the detailed views.
 
 ## Features
 
@@ -58,6 +53,7 @@ You can also open preamp from the app launcher.
 - Volume up to 150%, and volume and mute for each app.
 - Auto-switch rules. A preset can follow an output, an app in a call, or a fullscreen app.
 - A notification when preamp moves to a new output.
+- A command and a socket command for every action, for scripts and coding agents.
 - 50 languages, the same set as Omarchy.
 
 ## Views
@@ -73,125 +69,26 @@ Press `tab` to go to the next view. Studio, Modes and Signal chain have the deta
 | ![studio](docs/studio.png) | ![modes](docs/modes.png) | ![signal chain](docs/chain.png) |
 | The curve over the analyzer, the ten bands, presets and effects | Basic, graphic and parametric editing, and the command bar | Apps, equalizer, effects, room and output in the order the audio flows, and the auto-switch rules |
 
-## Bar widget
+## Documentation
 
-The widget is the preamp mark in the bar color. The tall block dims while the equalizer is off. Click it for the popover. Right-click it to bypass the equalizer. Scroll on it to change the volume.
-
-| Full popover | Quick popover |
+| Page | What it covers |
 |---|---|
-| ![full popover](docs/popover-full.png) | ![quick popover](docs/popover-quick.png) |
-
-To show the quick popover, run:
-
-```sh
-omarchy bar set preamp variant quick
-```
-
-## Keys
-
-Press `?` in the window to show the keys for the view.
-
-In the presets view:
-
-| Key | Action |
-|---|---|
-| `h` `l` or `←` `→` | Use the previous or next preset |
-| `j` `k` or `↓` `↑` | Use the preset above or below |
-| `-` `+` | Decrease or increase the volume by 5% |
-| `1` to `8` | Apply a preset |
-| `b` | Bypass the equalizer |
-| `tab` | Go to the next view |
-| `q` | Quit |
-
-In the other views:
-
-| Key | Action |
-|---|---|
-| `h` `l` or `←` `→` | Select a band |
-| `j` `k` or `↓` `↑` | Decrease or increase the gain of the band |
-| `H` `L` | Decrease or increase the frequency of the band |
-| `J` `K` | Decrease or increase the Q of the band |
-| `0` | Set the gain of the band to 0 |
-| `1` to `8` | Apply a preset |
-| `c` | Select the channel: L+R, L or R |
-| `b` | Bypass the equalizer |
-| `m` | Select the next mode: basic, graphic or parametric |
-| `:` | Open the command bar |
-| `tab` | Go to the next view |
-| `q` | Quit |
-
-The command bar finds presets and AutoEq profiles. It also accepts these commands:
-
-| Command | Action |
-|---|---|
-| `w NAME` | Save the curve as a preset |
-| `rm NAME` | Delete a saved preset |
-| `pin` | Apply the current preset each time this output is selected |
-| `unpin` | Remove the pin from this output |
-
-## Command line
-
-Each command starts the audio service if it is not running. Each command exits with 0 or 1 and writes errors to stderr. Add `--json` to get the full answer of the service.
-
-```sh
-preamp status
-preamp preset "Bass boost"
-preamp autoeq "hd 650"
-preamp band 3 --freq 125 --gain -2 --q 1.4
-preamp bypass on
-preamp outputs
-preamp output "Laptop Speakers"
-preamp volume 120
-```
-
-To teach coding agents to use these commands, run `preamp skill install`.
-
-## How it works
-
-The `preamp.service` user service runs `preamp daemon`. The daemon creates a PipeWire sink named `preamp` and makes it the default output. Apps play into this sink. The daemon runs the audio through the equalizer and plays it into the output that you select.
-
-- When you select an output in the Omarchy audio panel, preamp plays into that output and stays the default.
-- When you connect headphones that you used before, preamp moves to them, applies their pinned preset and shows a notification.
-- The volume in preamp is the volume of the output device.
-- On a laptop with an Omarchy speaker tuning, preamp plays into the tuning, so the tuning still applies.
-- When the service stops, it gives the default output back to the device that it played into.
-
-The settings are in `~/.config/preamp/config.json`. The AutoEq index is cached in `~/.cache/preamp/` for one week.
+| [Install](docs/install.md) | The package, a build from source, the install with an agent, a key for the window, updates and removal |
+| [Presets and headphone profiles](docs/presets.md) | The twelve presets, AutoEq, your own presets, pins and auto-switch rules |
+| [The window](docs/window.md) | The four views, the keys, the command bar, channels and bypass |
+| [Bar widget](docs/bar-widget.md) | The widget, the popover, its keys and its settings |
+| [Output, effects and room](docs/effects.md) | Outputs, volume, app volume, LV2 and LADSPA effects, width, room and balance |
+| [Command line](docs/command-line.md) | Every command, with examples for scripts, key bindings and agents |
+| [Socket protocol](docs/ipc.md) | The JSON protocol of the service, for your own programs |
+| [How it works](docs/how-it-works.md) | The service, the audio path, realtime priority and the files |
+| [Troubleshooting](docs/troubleshooting.md) | No sound, broken-up audio, Bluetooth quality and the known issues |
+| [Development](docs/development.md) | Build, tests, source layout, a test daemon and releases |
 
 ## Known issues
 
-- On a laptop with an Omarchy speaker tuning, the Omarchy volume keys change the volume of the tuning, not of the speakers. The preamp volume and the keys then add up. If the sound is too quiet, set the volume in preamp, for example `preamp volume 60`. The fix for Omarchy is in [omacom/omarchy#16687](https://github.com/omacom/omarchy/pull/16687).
-- The Signal chain view needs a window that is 1096 pixels wide or more. In a narrower window, the right-hand boxes are cut off.
-- The translations need a review by native speakers, mostly for Swahili, Irish, Sinhala, Icelandic, Uzbek, Tamil and Urdu. To correct a string, edit `src/i18n/<language>.json` and open a pull request.
-
-## Uninstall
-
-To stop preamp and give the output back to your device, run:
-
-```sh
-systemctl --user disable --now preamp.service
-sudo pacman -R preamp
-```
-
-To remove the bar widget, delete `~/.config/omarchy/plugins/preamp/`.
-
-## Development
-
-| Command | Action |
-|---|---|
-| `bin/build` | Builds `build/preamp` |
-| `bin/test` | Builds and runs the tests offscreen |
-| `bin/install` | Builds and installs the package, then restarts the service |
-
-preamp is C++ and Qt Quick in one binary. The daemon uses `libpipewire` and `lilv`. The bar widget is a QML plugin for the Omarchy shell. The binary contains the widget, and `preamp shell install` writes it to `~/.config/omarchy/plugins/preamp/`.
-
-To save a screenshot of the window without a display, use these environment variables:
-
-| Variable | Value |
-|---|---|
-| `PREAMP_THEME_DIR` | An Omarchy theme directory |
-| `PREAMP_VIEW` | The view, for example `presets` or `modes:parametric` |
-| `PREAMP_SCREENSHOT` | The output file |
+- On a laptop with an Omarchy speaker tuning, the Omarchy volume keys change the volume of the tuning, not of the speakers. If the sound is too quiet, set the volume in preamp, for example `preamp volume 60`. The fix for Omarchy is in [omacom/omarchy#16687](https://github.com/omacom/omarchy/pull/16687).
+- Omarchy on x86_64 does not install `rtkit`, so audio can break up when the computer is busy. See [Troubleshooting](docs/troubleshooting.md#audio-breaks-up-when-the-computer-is-busy).
+- The Signal chain view needs a window that is 1096 pixels wide or more.
 
 ## License
 
