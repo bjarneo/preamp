@@ -13,8 +13,8 @@ You need Omarchy with the Omarchy shell, PipeWire and WirePlumber.
 To install the release package:
 
 ```sh
-curl -LO https://github.com/bjarneo/preamp/releases/download/v0.1.0/preamp-0.1.0-1-x86_64.pkg.tar.zst
-sudo pacman -U preamp-0.1.0-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/bjarneo/preamp/releases/download/v0.1.1/preamp-0.1.1-1-x86_64.pkg.tar.zst
+sudo pacman -U preamp-0.1.1-1-x86_64.pkg.tar.zst
 systemctl --user enable --now preamp.service
 preamp shell install
 ```
@@ -160,7 +160,7 @@ The settings are in `~/.config/preamp/config.json`. The AutoEq index is cached i
 
 ## Known issues
 
-- On a laptop with an Omarchy speaker tuning, the Omarchy volume keys change the volume of the tuning, not of the speakers. The preamp volume and the keys then add up. If the sound is too quiet, set the volume in preamp, for example `preamp volume 60`.
+- On a laptop with an Omarchy speaker tuning, the Omarchy volume keys change the volume of the tuning, not of the speakers. The preamp volume and the keys then add up. If the sound is too quiet, set the volume in preamp, for example `preamp volume 60`. The fix for Omarchy is in [omacom/omarchy#16687](https://github.com/omacom/omarchy/pull/16687).
 - The Signal chain view needs a window that is 1096 pixels wide or more. In a narrower window, the right-hand boxes are cut off.
 - The translations need a review by native speakers, mostly for Swahili, Irish, Sinhala, Icelandic, Uzbek, Tamil and Urdu. To correct a string, edit `src/i18n/<language>.json` and open a pull request.
 
