@@ -30,6 +30,18 @@ Item {
                 return qsTr("softer lows and highs for late hours")
             case "Podcast":
                 return qsTr("clear speech, less rumble")
+            case "Treble boost":
+                return qsTr("more detail and air")
+            case "Bass cut":
+                return qsTr("less boom from small speakers")
+            case "Warm":
+                return qsTr("rich lows, smooth highs")
+            case "Rock":
+                return qsTr("punchy drums, bright guitars")
+            case "Movie":
+                return qsTr("deep effects, clear dialog")
+            case "Gaming":
+                return qsTr("footsteps and cues stand out")
             }
         }
         return p.kind === "autoeq" ? qsTr("headphone correction") : qsTr("your own preset")

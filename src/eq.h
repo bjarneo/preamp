@@ -70,7 +70,10 @@ struct Preset {
     Bands right;
 };
 
+// The everyday presets come first and keep keys 1 to 6. The others get a
+// key only when they are among the presets used most recently.
 QVector<Preset> builtins();
+constexpr int EverydayPresets = 6;
 
 // Parses AutoEQ's "ParametricEQ.txt" into ten bands sorted by frequency.
 // Returns an empty list when the text holds no usable filter.

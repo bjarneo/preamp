@@ -332,11 +332,11 @@ const Daemon::Preset *Daemon::findPreset(const QString &name) const {
     return nullptr;
 }
 
-// Keys 1 to 8: the built-in presets, then the most recent headphone
-// profiles and saved presets.
+// Keys 1 to 8: the everyday presets, then the most recent other presets,
+// headphone profiles and saved presets.
 QStringList Daemon::presetSlots() const {
     QStringList out;
-    for (const eq::Preset &p : eq::builtins())
+    for (const eq::Preset &p : eq::builtins().mid(0, eq::EverydayPresets))
         out << p.name;
     for (const QString &name : m_recent) {
         if (out.size() >= 8)
@@ -348,7 +348,7 @@ QStringList Daemon::presetSlots() const {
 }
 
 void Daemon::remember(const QString &name) {
-    for (const eq::Preset &p : eq::builtins())
+    for (const eq::Preset &p : eq::builtins().mid(0, eq::EverydayPresets))
         if (p.name == name)
             return;
     m_recent.removeAll(name);

@@ -64,7 +64,7 @@ You can also open preamp from the app launcher.
 
 The presets view is the everyday view. It shows one card for each preset with the shape of its curve, and the output and volume below the cards. Click a card or press its number to use the preset.
 
-![The presets view: six preset cards with their curves, the output and the volume](docs/presets.png)
+![The presets view: one card for each preset with its curve, the output and the volume](docs/presets.png)
 
 Press `tab` to go to the next view. Studio, Modes and Signal chain have the detailed controls. The window opens on the view you used last.
 
@@ -75,7 +75,7 @@ Press `tab` to go to the next view. Studio, Modes and Signal chain have the deta
 
 ## Bar widget
 
-The widget shows the preset in use. Click it for the popover. Right-click it to bypass the equalizer. Scroll on it to change the volume.
+The widget is the preamp mark in the bar color. The tall block dims while the equalizer is off. Click it for the popover. Right-click it to bypass the equalizer. Scroll on it to change the volume.
 
 | Full popover | Quick popover |
 |---|---|
