@@ -20,6 +20,7 @@
 #include <QTimer>
 #include <QEventLoop>
 #include <csignal>
+#include <optional>
 #include <cstdio>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -28,9 +29,12 @@ namespace cli {
 
 namespace {
 
-const QStringList Commands{"daemon", "status", "preset", "presets", "bypass", "output", "outputs", "volume",
-                           "band", "autoeq", "pin", "unpin", "shell", "skill", "help", "--help", "-h", "version",
-                           "--version"};
+// Every action of the window and the bar widget has a command here. The
+// daemon's socket takes the same actions; see docs/ipc.md.
+const QStringList Commands{"daemon", "status", "watch", "preset", "presets", "save", "delete", "search", "autoeq",
+                           "pin", "unpin", "bypass", "bands", "band", "tone", "channel", "output", "outputs",
+                           "volume", "balance", "width", "room", "apps", "app", "plugins", "plugin", "rules",
+                           "rule", "shell", "skill", "help", "--help", "-h", "version", "--version"};
 
 void out(const QString &text) {
     std::fputs(qPrintable(text + "\n"), stdout);
@@ -40,9 +44,108 @@ void err(const QString &text) {
     std::fputs(qPrintable("preamp: " + text + "\n"), stderr);
 }
 
+QString pretty(const QJsonValue &value) {
+    const QJsonDocument doc = value.isArray() ? QJsonDocument(value.toArray()) : QJsonDocument(value.toObject());
+    return QString::fromUtf8(doc.toJson(QJsonDocument::Indented)).trimmed();
+}
+
 QString formatGain(double g) {
     const QString sign = g > 0.04 ? "+" : g < -0.04 ? "-" : "";
     return sign + QString::number(std::abs(g), 'f', 1);
+}
+
+QString formatFreq(double f) {
+    return f < 1000 ? QStringLiteral("%1 Hz").arg(qRound(f)) : QStringLiteral("%1 kHz").arg(QString::number(f / 1000, 'g', 3));
+}
+
+QString formatBalance(int b) {
+    return b == 0 ? QStringLiteral("center") : QStringLiteral("%1 %2").arg(std::abs(b)).arg(b < 0 ? "left" : "right");
+}
+
+// Band types by the names people use, and by the short names in the JSON.
+QString bandType(const QString &name) {
+    if (name == "peak" || name == "pk")
+        return "pk";
+    if (name == "lowshelf" || name == "ls")
+        return "ls";
+    if (name == "highshelf" || name == "hs")
+        return "hs";
+    return {};
+}
+
+QString bandTypeLabel(const QString &t) {
+    return t == "ls" ? "lowshelf" : t == "hs" ? "highshelf" : "peak";
+}
+
+// Takes "--name VALUE" out of the arguments.
+std::optional<QString> takeOption(QStringList &args, const QString &name) {
+    const qsizetype i = args.indexOf(name);
+    if (i < 0)
+        return std::nullopt;
+    const QString value = args.value(i + 1);
+    args.remove(i, std::min<qsizetype>(2, args.size() - i));
+    return value;
+}
+
+bool takeFlag(QStringList &args, const QString &name) {
+    return args.removeAll(name) > 0;
+}
+
+// Reads a number in a range, or says what the range is.
+bool number(const QString &text, double low, double high, const QString &what, double *value) {
+    bool ok = false;
+    *value = QString(text).remove('%').toDouble(&ok);
+    if (ok && *value >= low && *value <= high)
+        return true;
+    err(QStringLiteral("%1 is %2 to %3").arg(what).arg(low).arg(high));
+    return false;
+}
+
+// Places in the chain and rules count from 1 on the command line.
+bool place(const QString &text, int count, const QString &what, int *index) {
+    bool ok = false;
+    const int n = text.toInt(&ok);
+    if (ok && n >= 1 && n <= count) {
+        *index = n - 1;
+        return true;
+    }
+    err(count ? QStringLiteral("%1 is 1 to %2").arg(what).arg(count) : QStringLiteral("there is no %1 yet").arg(what));
+    return false;
+}
+
+// An output by its label or its node name.
+QString outputName(const QJsonObject &state, const QString &wanted) {
+    for (const auto &v : state.value("outputs").toArray()) {
+        const QJsonObject o = v.toObject();
+        if (o.value("name").toString() == wanted || o.value("label").toString().compare(wanted, Qt::CaseInsensitive) == 0)
+            return o.value("name").toString();
+    }
+    return {};
+}
+
+QJsonObject findApp(const QJsonObject &state, const QString &wanted) {
+    for (const auto &v : state.value("apps").toArray()) {
+        const QJsonObject a = v.toObject();
+        if (a.value("key").toString() == wanted || a.value("name").toString().compare(wanted, Qt::CaseInsensitive) == 0)
+            return a;
+    }
+    return {};
+}
+
+bool hasPreset(const QJsonObject &state, const QString &name) {
+    for (const auto &v : state.value("presets").toArray())
+        if (v.toObject().value("name").toString() == name)
+            return true;
+    return false;
+}
+
+// The rules after the pins, which the pin commands own.
+QJsonArray switchRules(const QJsonObject &state) {
+    QJsonArray list;
+    for (const auto &v : state.value("rules").toArray())
+        if (v.toObject().value("kind").toString() != "output")
+            list.append(v);
+    return list;
 }
 
 // Connects to the daemon, starting it through systemd when it is not up.
@@ -179,6 +282,23 @@ int installSkill(bool json) {
     return 0;
 }
 
+// Search replies arrive as messages. This waits for the one that is no
+// longer pending.
+QJsonObject search(ipc::Client &client, const QString &query) {
+    QJsonObject found;
+    QEventLoop loop;
+    QObject::connect(&client, &ipc::Client::message, &loop, [&](const QJsonObject &m) {
+        if (m.value("type").toString() != "search" || m.value("pending").toBool())
+            return;
+        found = m;
+        loop.quit();
+    });
+    QTimer::singleShot(25000, &loop, &QEventLoop::quit);
+    client.send({{"cmd", "search"}, {"q", query}});
+    loop.exec();
+    return found;
+}
+
 int sigFd[2] = {-1, -1};
 
 void onSignal(int) {
@@ -195,20 +315,58 @@ void printHelp() {
         "preamp: system audio equalizer for Omarchy\n"
         "\n"
         "Usage:\n"
-        "  preamp                    open the window\n"
-        "  preamp daemon             run the audio service (systemd starts it)\n"
-        "  preamp status             show what plays where\n"
-        "  preamp presets            list presets\n"
-        "  preamp preset NAME        apply a preset\n"
-        "  preamp bypass [on|off]    switch the equalizer off and on\n"
-        "  preamp outputs            list outputs\n"
-        "  preamp output NAME        play through an output\n"
-        "  preamp volume [0-150]     show or set the output volume\n"
-        "  preamp band N [--freq F] [--gain G] [--q Q]\n"
-        "  preamp autoeq QUERY       apply the AutoEq profile for a headphone\n"
-        "  preamp pin | unpin        pin the preset to the output, or drop the pin\n"
-        "  preamp shell install      put the preamp widget on the Omarchy bar\n"
-        "  preamp skill install      teach coding agents to drive preamp\n"
+        "  preamp [open]                       open the window\n"
+        "  preamp daemon                       run the audio service (systemd starts it)\n"
+        "  preamp status                       show what plays where\n"
+        "  preamp watch [--spectrum]           print each change, and the analyzer, as JSON lines\n"
+        "\n"
+        "Presets:\n"
+        "  preamp presets                      list presets; keys 1 to 8 show their number\n"
+        "  preamp preset NAME                  apply a preset\n"
+        "  preamp preset --next | --prev       apply the next or previous preset on keys 1 to 8\n"
+        "  preamp save NAME                    save the curve as a preset\n"
+        "  preamp delete NAME                  delete a saved preset\n"
+        "  preamp search QUERY                 find presets and AutoEq profiles\n"
+        "  preamp autoeq QUERY                 apply the AutoEq profile for a headphone\n"
+        "  preamp pin [PRESET] [--output OUT]  pin a preset to an output\n"
+        "  preamp unpin [--output OUT]         drop the pin on an output\n"
+        "\n"
+        "Equalizer:\n"
+        "  preamp bypass [on|off]              switch the equalizer off and on\n"
+        "  preamp bands                        list the ten bands\n"
+        "  preamp band N [--freq HZ] [--gain DB] [--q Q] [--type peak|lowshelf|highshelf]\n"
+        "  preamp tone [--bass DB] [--mid DB] [--treble DB]\n"
+        "                                      show or set bass, mid and treble\n"
+        "  preamp channel [L+R|L|R | --next]   show or pick the channel to edit\n"
+        "\n"
+        "Output:\n"
+        "  preamp outputs                      list outputs\n"
+        "  preamp output NAME | --next         play through an output\n"
+        "  preamp volume [0..150]              show or set the output volume\n"
+        "  preamp balance [-100..100]          show or set the balance; below 0 is left\n"
+        "  preamp width [0..200]               show or set the stereo width in percent\n"
+        "  preamp room [ROOM | --next]         show or set the room: off, small room, studio, hall\n"
+        "\n"
+        "Apps:\n"
+        "  preamp apps                         list the apps that play\n"
+        "  preamp app NAME [--volume 0..100] [--mute | --unmute]\n"
+        "\n"
+        "Effects:\n"
+        "  preamp plugins [--available]        list the effects in the chain, or the installed ones\n"
+        "  preamp plugin add ID|NAME           add an effect at the end of the chain\n"
+        "  preamp plugin on|off|remove N       switch on, switch off or remove effect N\n"
+        "  preamp plugin move N TO             move effect N to place TO\n"
+        "\n"
+        "Rules:\n"
+        "  preamp rules                        list the pins and the auto-switch rules\n"
+        "  preamp rule add call|fullscreen APP [--preset P] [--room ROOM]\n"
+        "  preamp rule set N [--kind call|fullscreen] [--app APP] [--preset P] [--room ROOM]\n"
+        "  preamp rule remove N\n"
+        "\n"
+        "Setup:\n"
+        "  preamp shell install                put the preamp widget on the Omarchy bar\n"
+        "  preamp skill install                teach coding agents to drive preamp\n"
+        "  preamp version                      print the version\n"
         "\n"
         "Add --json to any command for machine-readable output."));
 }
@@ -252,7 +410,8 @@ int run(const QStringList &argv) {
         return 0;
     }
     if (command == "version" || command == "--version") {
-        out(QCoreApplication::applicationVersion());
+        out(json ? QStringLiteral("{\"version\":\"%1\"}").arg(QCoreApplication::applicationVersion())
+                 : QCoreApplication::applicationVersion());
         return 0;
     }
     if (command == "daemon")
@@ -280,130 +439,106 @@ int run(const QStringList &argv) {
 
     if (command == "status") {
         if (json) {
-            out(QString::fromUtf8(QJsonDocument(state).toJson(QJsonDocument::Indented)).trimmed());
+            out(pretty(state));
             return 0;
         }
         out(QStringLiteral("preset   %1%2").arg(state.value("preset").toString(), state.value("dirty").toBool() ? " (edited)" : ""));
         out(QStringLiteral("eq       %1").arg(state.value("bypass").toBool() ? "bypassed" : "active"));
         out(QStringLiteral("preamp   %1 dB").arg(formatGain(state.value("preamp").toDouble())));
+        out(QStringLiteral("channel  %1").arg(state.value("link").toBool() ? "L+R" : state.value("channel").toString()));
         out(QStringLiteral("output   %1").arg(state.value("outputLabel").toString()));
         out(QStringLiteral("volume   %1%").arg(state.value("volume").toInt()));
+        out(QStringLiteral("balance  %1").arg(formatBalance(state.value("balance").toInt())));
         out(QStringLiteral("room     %1, width %2%").arg(state.value("room").toString()).arg(state.value("width").toInt()));
         return 0;
     }
+    if (command == "watch") {
+        // One JSON object per line: the state after each change, and the
+        // analyzer about 30 times a second with --spectrum.
+        QObject::connect(&client, &ipc::Client::message, [](const QJsonObject &m) {
+            out(QString::fromUtf8(QJsonDocument(m).toJson(QJsonDocument::Compact)));
+            std::fflush(stdout);
+        });
+        QObject::connect(&client, &ipc::Client::disconnected, QCoreApplication::instance(), &QCoreApplication::quit);
+        client.send({{"cmd", "subscribe"}, {"state", true}, {"spectrum", takeFlag(args, "--spectrum")}});
+        QCoreApplication::exec();
+        return 0;
+    }
+
+    // Presets.
     if (command == "presets") {
+        const QJsonArray library = send({{"cmd", "library"}}).value("presets").toArray();
         if (json) {
-            out(QString::fromUtf8(QJsonDocument(state.value("presets").toArray()).toJson(QJsonDocument::Indented)).trimmed());
+            out(pretty(library));
             return 0;
         }
-        for (const auto &p : state.value("presets").toArray()) {
-            const QString name = p.toObject().value("name").toString();
-            out((name == state.value("preset").toString() ? "* " : "  ") + name);
+        const QStringList keys = state.value("slots").toVariant().toStringList();
+        for (const auto &v : library) {
+            const QJsonObject p = v.toObject();
+            const QString name = p.value("name").toString();
+            const qsizetype key = keys.indexOf(name);
+            const QString kind = p.value("kind").toString();
+            out(QStringLiteral("%1%2  %3%4")
+                    .arg(name == state.value("preset").toString() ? "* " : "  ", key >= 0 ? QString::number(key + 1) : " ", name,
+                         kind == "builtin" ? QString() : "  · " + kind));
         }
         return 0;
     }
     if (command == "preset") {
+        const bool next = takeFlag(args, "--next");
+        const bool prev = takeFlag(args, "--prev");
+        if (next || prev) {
+            const QJsonObject r = send({{"cmd", next ? "nextPreset" : "prevPreset"}});
+            const QString now = send({{"cmd", "state"}}).value("state").toObject().value("preset").toString();
+            return finish(r, json, QStringLiteral("Applied %1.").arg(now));
+        }
         const QString name = args.mid(1).join(' ');
         if (name.isEmpty()) {
-            err("usage: preamp preset NAME");
+            err("usage: preamp preset NAME | --next | --prev");
             return 1;
         }
         return finish(send({{"cmd", "applyPreset"}, {"name", name}}), json, QStringLiteral("Applied %1.").arg(name));
     }
-    if (command == "bypass") {
-        QJsonObject m{{"cmd", "setBypass"}};
-        if (args.value(1) == "on")
-            m.insert("on", true);
-        else if (args.value(1) == "off")
-            m.insert("on", false);
-        const QJsonObject r = send(m);
-        return finish(r, json, r.value("bypass").toBool() ? "The equalizer is bypassed." : "The equalizer is on.");
-    }
-    if (command == "outputs") {
-        if (json) {
-            out(QString::fromUtf8(QJsonDocument(state.value("outputs").toArray()).toJson(QJsonDocument::Indented)).trimmed());
-            return 0;
+    if (command == "save" || command == "delete") {
+        const QString name = args.mid(1).join(' ');
+        if (name.isEmpty()) {
+            err(QStringLiteral("usage: preamp %1 NAME").arg(command));
+            return 1;
         }
-        for (const auto &v : state.value("outputs").toArray()) {
-            const QJsonObject o = v.toObject();
-            const bool current = o.value("name").toString() == state.value("output").toString();
-            out(QStringLiteral("%1%2  %3 · %4  (%5)")
-                    .arg(current ? "* " : "  ", o.value("label").toString(), o.value("kind").toString(),
-                         o.value("rate").toString(), o.value("name").toString()));
+        return command == "save" ? finish(send({{"cmd", "savePreset"}, {"name", name}}), json, QStringLiteral("Saved %1.").arg(name))
+                                 : finish(send({{"cmd", "deletePreset"}, {"name", name}}), json, QStringLiteral("Deleted %1.").arg(name));
+    }
+    if (command == "search") {
+        const QString query = args.mid(1).join(' ');
+        if (query.isEmpty()) {
+            err("usage: preamp search QUERY");
+            return 1;
+        }
+        const QJsonObject found = search(client, query);
+        if (json) {
+            out(pretty(found));
+            return found.value("error").toString().isEmpty() ? 0 : 1;
+        }
+        const QJsonArray results = found.value("results").toArray();
+        for (const auto &v : results)
+            out(QStringLiteral("%1  %2").arg(v.toObject().value("s").toString().leftJustified(6), v.toObject().value("t").toString()));
+        if (!found.value("error").toString().isEmpty()) {
+            err(QStringLiteral("could not reach AutoEq: %1").arg(found.value("error").toString()));
+            return 1;
+        }
+        if (results.isEmpty()) {
+            err(QStringLiteral("nothing matches %1").arg(query));
+            return 1;
         }
         return 0;
     }
-    if (command == "output") {
-        const QString wanted = args.mid(1).join(' ');
-        QString name;
-        for (const auto &v : state.value("outputs").toArray()) {
-            const QJsonObject o = v.toObject();
-            if (o.value("name").toString() == wanted || o.value("label").toString().compare(wanted, Qt::CaseInsensitive) == 0)
-                name = o.value("name").toString();
-        }
-        if (name.isEmpty()) {
-            err(QStringLiteral("no output named %1. List them with: preamp outputs").arg(wanted));
-            return 1;
-        }
-        return finish(send({{"cmd", "setOutput"}, {"name", name}}), json, QStringLiteral("Playing through %1.").arg(wanted));
-    }
-    if (command == "volume") {
-        if (args.size() < 2) {
-            if (json)
-                out(QStringLiteral("{\"volume\":%1}").arg(state.value("volume").toInt()));
-            else
-                out(QStringLiteral("%1%").arg(state.value("volume").toInt()));
-            return 0;
-        }
-        bool ok = false;
-        const double v = QString(args[1]).remove('%').toDouble(&ok);
-        if (!ok || v < 0 || v > 150) {
-            err("volume is 0 to 150");
-            return 1;
-        }
-        return finish(send({{"cmd", "setVolume"}, {"v", v}}), json, QStringLiteral("Volume %1%.").arg(v));
-    }
-    if (command == "band") {
-        bool ok = false;
-        const int n = args.value(1).toInt(&ok);
-        if (!ok || n < 1 || n > 10) {
-            err("usage: preamp band 1-10 [--freq HZ] [--gain DB] [--q Q]");
-            return 1;
-        }
-        QJsonObject m{{"cmd", "setBand"}, {"i", n - 1}};
-        for (int i = 2; i + 1 < args.size(); i += 2) {
-            const QString key = args[i] == "--freq" ? "f" : args[i] == "--gain" ? "g" : args[i] == "--q" ? "q" : QString();
-            if (key.isEmpty()) {
-                err(QStringLiteral("unknown option %1").arg(args[i]));
-                return 1;
-            }
-            m.insert(key, args[i + 1].toDouble());
-        }
-        return finish(send(m), json, QStringLiteral("Band %1 set.").arg(n));
-    }
-    if (command == "pin" || command == "unpin")
-        return finish(send({{"cmd", command}}), json,
-                      command == "pin" ? QStringLiteral("Pinned %1 to %2.").arg(state.value("preset").toString(),
-                                                                                  state.value("outputLabel").toString())
-                                       : QStringLiteral("Dropped the pin on %1.").arg(state.value("outputLabel").toString()));
     if (command == "autoeq") {
         const QString query = args.mid(1).join(' ');
         if (query.isEmpty()) {
             err("usage: preamp autoeq QUERY");
             return 1;
         }
-        // Search replies arrive as messages; wait for one without "pending".
-        QJsonObject found;
-        QEventLoop loop;
-        QObject::connect(&client, &ipc::Client::message, &loop, [&](const QJsonObject &m) {
-            if (m.value("type").toString() != "search" || m.value("pending").toBool())
-                return;
-            found = m;
-            loop.quit();
-        });
-        QTimer::singleShot(25000, &loop, &QEventLoop::quit);
-        client.send({{"cmd", "search"}, {"q", query}});
-        loop.exec();
+        const QJsonObject found = search(client, query);
         QJsonObject pick;
         for (const auto &v : found.value("results").toArray())
             if (pick.isEmpty() && v.toObject().value("s").toString() == "autoeq")
@@ -419,6 +554,391 @@ int run(const QStringList &argv) {
                           QStringLiteral("Applied %1.").arg(pick.value("n").toString()));
         const QJsonObject r = client.request({{"cmd", "autoeq"}, {"path", pick.value("path").toString()}}, 30000);
         return finish(r, json, QStringLiteral("Applied %1.").arg(r.value("preset").toString()));
+    }
+    if (command == "pin" || command == "unpin") {
+        QJsonObject m{{"cmd", command}};
+        QString label = state.value("outputLabel").toString();
+        if (const auto wanted = takeOption(args, "--output")) {
+            // A pin can stay for an output that is not connected now.
+            const QString name = outputName(state, *wanted);
+            m.insert("output", name.isEmpty() ? *wanted : name);
+            label = *wanted;
+        }
+        const QString preset = args.mid(1).join(' ');
+        if (command == "unpin")
+            return finish(send(m), json, QStringLiteral("Dropped the pin on %1.").arg(label));
+        if (!preset.isEmpty())
+            m.insert("preset", preset);
+        return finish(send(m), json,
+                      QStringLiteral("Pinned %1 to %2.").arg(preset.isEmpty() ? state.value("preset").toString() : preset, label));
+    }
+
+    // Equalizer.
+    if (command == "bypass") {
+        QJsonObject m{{"cmd", "setBypass"}};
+        if (args.value(1) == "on")
+            m.insert("on", true);
+        else if (args.value(1) == "off")
+            m.insert("on", false);
+        const QJsonObject r = send(m);
+        return finish(r, json, r.value("bypass").toBool() ? "The equalizer is bypassed." : "The equalizer is on.");
+    }
+    if (command == "bands") {
+        const QJsonObject bands = state.value("bands").toObject();
+        if (json) {
+            out(pretty(QJsonObject{{"link", state.value("link")}, {"channel", state.value("channel")}, {"bands", bands}}));
+            return 0;
+        }
+        const bool link = state.value("link").toBool();
+        for (const QString &side : link ? QStringList{"L"} : QStringList{"L", "R"}) {
+            out(link ? QStringLiteral("L+R") : side);
+            const QJsonArray list = bands.value(side).toArray();
+            for (int i = 0; i < list.size(); ++i) {
+                const QJsonObject b = list[i].toObject();
+                out(QStringLiteral("%1  %2  %3  %4 dB  q %5")
+                        .arg(i + 1, 2)
+                        .arg(bandTypeLabel(b.value("t").toString()).leftJustified(9), formatFreq(b.value("f").toDouble()).rightJustified(8),
+                             formatGain(b.value("g").toDouble()).rightJustified(5), QString::number(b.value("q").toDouble(), 'f', 2)));
+            }
+        }
+        return 0;
+    }
+    if (command == "band") {
+        bool ok = false;
+        const int n = args.value(1).toInt(&ok);
+        if (!ok || n < 1 || n > 10) {
+            err("usage: preamp band 1-10 [--freq HZ] [--gain DB] [--q Q] [--type peak|lowshelf|highshelf]");
+            return 1;
+        }
+        QJsonObject m{{"cmd", "setBand"}, {"i", n - 1}};
+        double v = 0;
+        if (const auto f = takeOption(args, "--freq")) {
+            if (!number(*f, 20, 20000, "the frequency", &v))
+                return 1;
+            m.insert("f", v);
+        }
+        if (const auto g = takeOption(args, "--gain")) {
+            if (!number(*g, -12, 12, "the gain", &v))
+                return 1;
+            m.insert("g", v);
+        }
+        if (const auto q = takeOption(args, "--q")) {
+            if (!number(*q, 0.3, 10, "q", &v))
+                return 1;
+            m.insert("q", v);
+        }
+        if (const auto t = takeOption(args, "--type")) {
+            if (bandType(*t).isEmpty()) {
+                err("the type is peak, lowshelf or highshelf");
+                return 1;
+            }
+            m.insert("t", bandType(*t));
+        }
+        if (args.size() > 2) {
+            err(QStringLiteral("unknown option %1").arg(args[2]));
+            return 1;
+        }
+        return finish(send(m), json, QStringLiteral("Band %1 set.").arg(n));
+    }
+    if (command == "tone") {
+        // Bass, mid and treble each move a group of bands, as in the basic
+        // mode of the window.
+        const QStringList names{"bass", "mid", "treble"};
+        bool changedAny = false;
+        for (int k = 0; k < names.size(); ++k) {
+            const auto g = takeOption(args, "--" + names[k]);
+            if (!g)
+                continue;
+            double v = 0;
+            if (!number(*g, -12, 12, names[k], &v))
+                return 1;
+            const QJsonObject r = send({{"cmd", "setMacro"}, {"k", k}, {"v", v}});
+            if (!r.value("ok").toBool())
+                return finish(r, json, {});
+            changedAny = true;
+        }
+        if (args.size() > 1) {
+            err(QStringLiteral("unknown option %1").arg(args[1]));
+            return 1;
+        }
+        const QJsonArray macros = (changedAny ? send({{"cmd", "state"}}).value("state").toObject() : state).value("macros").toArray();
+        if (json) {
+            out(pretty(QJsonObject{{"bass", macros[0]}, {"mid", macros[1]}, {"treble", macros[2]}}));
+            return 0;
+        }
+        for (int k = 0; k < names.size(); ++k)
+            out(QStringLiteral("%1 %2 dB").arg(names[k].leftJustified(7), formatGain(macros[k].toDouble())));
+        return 0;
+    }
+    if (command == "channel") {
+        if (takeFlag(args, "--next")) {
+            const QJsonObject r = send({{"cmd", "cycleChannel"}});
+            const QJsonObject now = send({{"cmd", "state"}}).value("state").toObject();
+            return finish(r, json, QStringLiteral("Editing %1.").arg(now.value("link").toBool() ? "L+R" : now.value("channel").toString()));
+        }
+        if (args.size() < 2) {
+            const QString ch = state.value("link").toBool() ? "L+R" : state.value("channel").toString();
+            out(json ? QStringLiteral("{\"channel\":\"%1\"}").arg(ch) : ch);
+            return 0;
+        }
+        return finish(send({{"cmd", "setChannel"}, {"channel", args[1].toUpper()}}), json,
+                      QStringLiteral("Editing %1.").arg(args[1].toUpper()));
+    }
+
+    // Output.
+    if (command == "outputs") {
+        if (json) {
+            out(pretty(state.value("outputs")));
+            return 0;
+        }
+        for (const auto &v : state.value("outputs").toArray()) {
+            const QJsonObject o = v.toObject();
+            const bool current = o.value("name").toString() == state.value("output").toString();
+            out(QStringLiteral("%1%2  %3 · %4  (%5)")
+                    .arg(current ? "* " : "  ", o.value("label").toString(), o.value("kind").toString(),
+                         o.value("rate").toString(), o.value("name").toString()));
+        }
+        return 0;
+    }
+    if (command == "output") {
+        if (takeFlag(args, "--next")) {
+            const QJsonObject r = send({{"cmd", "nextOutput"}});
+            const QString now = send({{"cmd", "state"}}).value("state").toObject().value("outputLabel").toString();
+            return finish(r, json, QStringLiteral("Playing through %1.").arg(now));
+        }
+        const QString wanted = args.mid(1).join(' ');
+        const QString name = outputName(state, wanted);
+        if (name.isEmpty()) {
+            err(QStringLiteral("no output named %1. List them with: preamp outputs").arg(wanted));
+            return 1;
+        }
+        return finish(send({{"cmd", "setOutput"}, {"name", name}}), json, QStringLiteral("Playing through %1.").arg(wanted));
+    }
+    if (command == "volume" || command == "balance" || command == "width") {
+        const int now = state.value(command).toInt();
+        if (args.size() < 2) {
+            if (json)
+                out(QStringLiteral("{\"%1\":%2}").arg(command).arg(now));
+            else
+                out(command == "balance" ? formatBalance(now) : QStringLiteral("%1%").arg(now));
+            return 0;
+        }
+        double v = 0;
+        if (command == "volume") {
+            if (!number(args[1], 0, 150, "volume", &v))
+                return 1;
+            return finish(send({{"cmd", "setVolume"}, {"v", v}}), json, QStringLiteral("Volume %1%.").arg(v));
+        }
+        if (command == "balance") {
+            if (!number(args[1], -100, 100, "balance", &v))
+                return 1;
+            return finish(send({{"cmd", "setBalance"}, {"v", v}}), json, QStringLiteral("Balance %1.").arg(formatBalance(qRound(v))));
+        }
+        if (!number(args[1], 0, 200, "width", &v))
+            return 1;
+        return finish(send({{"cmd", "setWidth"}, {"v", v}}), json, QStringLiteral("Width %1%.").arg(qRound(v)));
+    }
+    if (command == "room") {
+        if (args.size() < 2) {
+            out(json ? QStringLiteral("{\"room\":\"%1\"}").arg(state.value("room").toString()) : state.value("room").toString());
+            return 0;
+        }
+        if (takeFlag(args, "--next")) {
+            const QJsonObject r = send({{"cmd", "nextRoom"}});
+            const QString now = send({{"cmd", "state"}}).value("state").toObject().value("room").toString();
+            return finish(r, json, QStringLiteral("Room %1.").arg(now));
+        }
+        const QString room = args.mid(1).join(' ');
+        return finish(send({{"cmd", "setRoom"}, {"room", room}}), json, QStringLiteral("Room %1.").arg(room));
+    }
+
+    // Apps.
+    if (command == "apps") {
+        if (json) {
+            out(pretty(state.value("apps")));
+            return 0;
+        }
+        for (const auto &v : state.value("apps").toArray()) {
+            const QJsonObject a = v.toObject();
+            out(QStringLiteral("%1  %2%  %3%4")
+                    .arg(a.value("name").toString())
+                    .arg(a.value("volume").toInt())
+                    .arg(a.value("state").toString(), a.value("muted").toBool() ? ", muted" : ""));
+        }
+        return 0;
+    }
+    if (command == "app") {
+        const auto volume = takeOption(args, "--volume");
+        const bool mute = takeFlag(args, "--mute");
+        const bool unmute = takeFlag(args, "--unmute");
+        const QString wanted = args.mid(1).join(' ');
+        const QJsonObject app = findApp(state, wanted);
+        if (wanted.isEmpty() || app.isEmpty()) {
+            err(QStringLiteral("no app named %1 plays now. List them with: preamp apps").arg(wanted));
+            return 1;
+        }
+        const QString key = app.value("key").toString();
+        bool muted = app.value("muted").toBool();
+        if (volume) {
+            double v = 0;
+            if (!number(*volume, 0, 100, "the app volume", &v))
+                return 1;
+            const QJsonObject r = send({{"cmd", "setAppVolume"}, {"key", key}, {"v", v}});
+            if (!r.value("ok").toBool())
+                return finish(r, json, {});
+            muted = false;
+        }
+        if ((mute && !muted) || (unmute && muted)) {
+            const QJsonObject r = send({{"cmd", "toggleAppMute"}, {"key", key}});
+            if (!r.value("ok").toBool())
+                return finish(r, json, {});
+        }
+        if (!volume && !mute && !unmute) {
+            out(json ? pretty(app)
+                     : QStringLiteral("%1  %2%  %3").arg(app.value("name").toString()).arg(app.value("volume").toInt()).arg(app.value("state").toString()));
+            return 0;
+        }
+        return finish({{"ok", true}}, json, QStringLiteral("Set %1.").arg(app.value("name").toString()));
+    }
+
+    // Effects.
+    if (command == "plugins") {
+        if (takeFlag(args, "--available")) {
+            const QJsonObject r = send({{"cmd", "plugins"}});
+            if (json) {
+                out(pretty(r.value("plugins")));
+                return 0;
+            }
+            for (const auto &v : r.value("plugins").toArray()) {
+                const QJsonObject p = v.toObject();
+                out(QStringLiteral("%1  %2  %3").arg(p.value("name").toString(), p.value("kind").toString(), p.value("id").toString()));
+            }
+            return 0;
+        }
+        const QJsonArray chain = state.value("plugins").toArray();
+        if (json) {
+            out(pretty(chain));
+            return 0;
+        }
+        if (chain.isEmpty())
+            out("No effects in the chain. List the installed ones with: preamp plugins --available");
+        for (int i = 0; i < chain.size(); ++i) {
+            const QJsonObject p = chain[i].toObject();
+            const QString error = p.value("error").toString();
+            out(QStringLiteral("%1  %2  %3  %4%5")
+                    .arg(i + 1)
+                    .arg(p.value("on").toBool() ? "on " : "off", p.value("name").toString(), p.value("kind").toString(),
+                         error.isEmpty() ? QString() : "  " + error));
+        }
+        return 0;
+    }
+    if (command == "plugin") {
+        const QString action = args.value(1);
+        const QJsonArray chain = state.value("plugins").toArray();
+        if (action == "add") {
+            const QString wanted = args.mid(2).join(' ');
+            QString id, name;
+            for (const auto &v : send({{"cmd", "plugins"}}).value("plugins").toArray()) {
+                const QJsonObject p = v.toObject();
+                if (p.value("id").toString() == wanted || p.value("name").toString().compare(wanted, Qt::CaseInsensitive) == 0) {
+                    id = p.value("id").toString();
+                    name = p.value("name").toString();
+                }
+            }
+            if (id.isEmpty()) {
+                err(QStringLiteral("no installed effect named %1. List them with: preamp plugins --available").arg(wanted));
+                return 1;
+            }
+            return finish(send({{"cmd", "addPlugin"}, {"plugin", id}}), json, QStringLiteral("Added %1.").arg(name));
+        }
+        int i = 0;
+        if ((action == "on" || action == "off" || action == "remove" || action == "move") &&
+            !place(args.value(2), int(chain.size()), "effect", &i))
+            return 1;
+        if (action == "on" || action == "off") {
+            if (chain[i].toObject().value("on").toBool() == (action == "on"))
+                return finish({{"ok", true}}, json, QStringLiteral("Effect %1 is already %2.").arg(i + 1).arg(action));
+            return finish(send({{"cmd", "togglePlugin"}, {"i", i}}), json, QStringLiteral("Switched effect %1 %2.").arg(i + 1).arg(action));
+        }
+        if (action == "remove")
+            return finish(send({{"cmd", "removePlugin"}, {"i", i}}), json, QStringLiteral("Removed effect %1.").arg(i + 1));
+        if (action == "move") {
+            int to = 0;
+            if (!place(args.value(3), int(chain.size()), "the new place", &to))
+                return 1;
+            return finish(send({{"cmd", "movePlugin"}, {"i", i}, {"to", to}}), json,
+                          QStringLiteral("Moved effect %1 to place %2.").arg(i + 1).arg(to + 1));
+        }
+        err("usage: preamp plugin add ID|NAME | on|off|remove N | move N TO");
+        return 1;
+    }
+
+    // Rules.
+    if (command == "rules") {
+        if (json) {
+            out(pretty(state.value("rules")));
+            return 0;
+        }
+        for (const auto &v : state.value("rules").toArray()) {
+            const QJsonObject r = v.toObject();
+            const QString kind = r.value("kind").toString();
+            const QString head = kind == "output" ? QStringLiteral("pin  output is")
+                                                  : QStringLiteral("%1    %2").arg(r.value("index").toInt() + 1)
+                                                        .arg(kind == "call" ? "app in call" : "app fullscreen");
+            const QString room = r.value("room").toString();
+            out(QStringLiteral("%1  %2 → %3%4%5")
+                    .arg(head, r.value("when").toString(), r.value("then").toString(), room.isEmpty() ? QString() : ", room " + room,
+                         r.value("active").toBool() ? "  active" : ""));
+        }
+        return 0;
+    }
+    if (command == "rule") {
+        const QString action = args.value(1);
+        const QJsonArray rules = switchRules(state);
+        QJsonObject m;
+        if (const auto preset = takeOption(args, "--preset")) {
+            if (!hasPreset(state, *preset)) {
+                err(QStringLiteral("no preset named %1. List them with: preamp presets").arg(*preset));
+                return 1;
+            }
+            m.insert("then", *preset);
+        }
+        if (const auto room = takeOption(args, "--room")) {
+            const QJsonArray rooms = state.value("rooms").toArray();
+            if (!rooms.contains(*room)) {
+                err("the room is off, small room, studio or hall");
+                return 1;
+            }
+            m.insert("room", *room == "off" ? QString() : *room);
+        }
+        if (const auto kind = takeOption(args, "--kind"))
+            m.insert("kind", *kind);
+        if (const auto app = takeOption(args, "--app"))
+            m.insert("when", *app);
+        if (action == "add") {
+            const QString kind = args.value(2);
+            const QString app = args.mid(3).join(' ');
+            if ((kind != "call" && kind != "fullscreen") || app.isEmpty()) {
+                err("usage: preamp rule add call|fullscreen APP [--preset P] [--room ROOM]");
+                return 1;
+            }
+            m.insert("cmd", "addRule");
+            m.insert("kind", kind);
+            m.insert("when", app);
+            return finish(send(m), json, QStringLiteral("Added rule %1.").arg(rules.size() + 1));
+        }
+        int i = 0;
+        if ((action == "set" || action == "remove") && !place(args.value(2), int(rules.size()), "rule", &i))
+            return 1;
+        if (action == "set") {
+            m.insert("cmd", "updateRule");
+            m.insert("index", i);
+            return finish(send(m), json, QStringLiteral("Changed rule %1.").arg(i + 1));
+        }
+        if (action == "remove")
+            return finish(send({{"cmd", "removeRule"}, {"index", i}}), json, QStringLiteral("Removed rule %1.").arg(i + 1));
+        err("usage: preamp rule add call|fullscreen APP | set N ... | remove N");
+        return 1;
     }
     err(QStringLiteral("unknown command %1").arg(command));
     printHelp();

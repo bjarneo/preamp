@@ -338,6 +338,29 @@ private slots:
         }
     }
 
+    void everySocketCommandHasACliCommand() {
+        // Scripts and agents can do all that the window and the bar widget
+        // can, so a new socket command needs a command line that sends it.
+        const QString root = QStringLiteral(PREAMP_SOURCE_DIR);
+        auto read = [&](const QString &path) {
+            QFile file(root + path);
+            return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
+        };
+        const QString daemon = read("/src/daemon.cpp");
+        const QString cli = read("/src/cli.cpp");
+        static const QRegularExpression handled(QStringLiteral("cmd == \"([A-Za-z]+)\""));
+        QSet<QString> commands;
+        for (auto it = handled.globalMatch(daemon); it.hasNext();)
+            commands.insert(it.next().captured(1));
+        QVERIFY(commands.size() > 30);
+        QStringList missing;
+        for (const QString &c : std::as_const(commands))
+            if (!cli.contains('"' + c + '"'))
+                missing << c;
+        missing.sort();
+        QVERIFY2(missing.isEmpty(), qPrintable("no command line sends: " + missing.join(", ")));
+    }
+
     void miniCurveShowsThePresetShape() {
         // The preset card's thumbnail: Bass boost sits well above the zero
         // line at the low end and on it at the high end.

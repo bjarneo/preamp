@@ -51,7 +51,8 @@ int main(int argc, char *argv[]) {
     QStringList args;
     for (int i = 1; i < argc; ++i)
         args << QString::fromLocal8Bit(argv[i]);
-    const QString command = args.value(0);
+    // --json can come before the command too.
+    const QString command = args.value(args.value(0) == "--json" ? 1 : 0);
 
     if (cli::handles(command)) {
         QCoreApplication app(argc, argv);
