@@ -89,7 +89,7 @@ QT_QPA_PLATFORM=offscreen PREAMP_VIEW=studio PREAMP_SCREENSHOT=studio.png build/
 ## Release
 
 1. Set `Version` in `src/main.cpp` and `pkgver` in `pkgbuild/PKGBUILD` to the new version.
-2. Change the version in the install commands in `README.md` and `docs/install.md`.
+2. Change the version in the install commands in `README.md`, `docs/install.md` and `docs/index.html`.
 3. Build the package:
 
    ```sh
