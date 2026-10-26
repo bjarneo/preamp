@@ -1,0 +1,12 @@
+build/
+build-*/
+pkgbuild/src/
+pkgbuild/pkg/
+pkgbuild/*.pkg.tar.*
+*.o
+moc_*
+qrc_*
+Makefile
+.qmake.stash
+compile_commands.json
+core.*

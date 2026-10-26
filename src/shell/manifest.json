@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "preamp",
+  "name": "preamp",
+  "version": "0.1.0",
+  "author": "preamp",
+  "license": "MIT",
+  "description": "System audio equalizer: output, volume, presets, ten bands and per-app volume from the bar.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "preamp",
+    "description": "The preset in use; click for output, volume, presets, bands and apps.",
+    "category": "Audio",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "variant": "full",
+      "shortcut": "super alt e"
+    },
+    "schema": [
+      {
+        "key": "variant",
+        "type": "enum",
+        "label": "Popover",
+        "options": ["full", "quick"],
+        "defaultValue": "full",
+        "description": "full: output, volume, presets, ten bands and apps. quick: output, volume, bass, mid and treble."
+      },
+      {
+        "key": "shortcut",
+        "type": "string",
+        "label": "Window shortcut",
+        "defaultValue": "super alt e",
+        "description": "The key shown next to \"open preamp\". Bind it in Hyprland to run: preamp"
+      }
+    ]
+  }
+}

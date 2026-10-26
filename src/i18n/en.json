@@ -1,0 +1,4 @@
+{
+  "%n streams": { "one": "%n stream", "other": "%n streams" },
+  "%n plugins": { "one": "%n plugin", "other": "%n plugins" }
+}

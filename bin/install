@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+"$ROOT/bin/build"
+cd "$ROOT/pkgbuild"
+makepkg -fsi "$@"
+
+# A daemon started by hand from the build directory holds the socket; stop
+# it so the service can take over.
+pkill -TERM -xf '.*preamp daemon' 2>/dev/null || true
+sleep 1
+
+# The audio service starts at login from now on, and right away.
+systemctl --user daemon-reload
+systemctl --user enable preamp.service
+systemctl --user restart preamp.service
+
+# The bar widget comes from the installed binary.
+/usr/bin/preamp shell install

@@ -1,0 +1,13 @@
+[Unit]
+Description=preamp system audio equalizer
+After=pipewire.service wireplumber.service
+Wants=pipewire.service wireplumber.service
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/preamp daemon
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

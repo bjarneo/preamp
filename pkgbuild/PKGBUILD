@@ -1,0 +1,26 @@
+pkgname=preamp
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='System audio equalizer for Omarchy'
+url='https://github.com/bjarneo/preamp'
+arch=('x86_64' 'aarch64')
+license=('MIT')
+depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'pipewire' 'wireplumber' 'lilv')
+makedepends=('gcc' 'make' 'lv2')
+optdepends=('lsp-plugins-lv2: compressor, limiter and other effects for the chain')
+source=()
+sha256sums=()
+
+build() {
+  cd "$startdir/.."
+  ./bin/build
+}
+
+package() {
+  cd "$startdir/.."
+  install -Dm755 build/preamp "$pkgdir/usr/bin/preamp"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$startdir/preamp.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/preamp.svg"
+  install -Dm644 "$startdir/preamp.desktop" "$pkgdir/usr/share/applications/preamp.desktop"
+  install -Dm644 "$startdir/preamp.service" "$pkgdir/usr/lib/systemd/user/preamp.service"
+}
