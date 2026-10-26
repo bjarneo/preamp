@@ -1132,8 +1132,11 @@ QJsonObject Daemon::handle(const QJsonObject &m) {
         return ok({{"plugins", list}});
     }
     if (cmd == "addPlugin") {
+        // "id" also numbers a request that wants a reply, so the plugin has
+        // its own field. A text "id" still comes from windows before 0.1.2.
+        const QJsonValue plugin = m.contains("plugin") ? m.value("plugin") : m.value("id");
         plugins::Info info;
-        if (!plugins::Catalog::shared().find(m.value("id").toString(), &info))
+        if (!plugins::Catalog::shared().find(plugin.toString(), &info))
             return fail("that plugin is not installed");
         if (!plugins::Catalog::fitsStereo(info))
             return fail("that plugin is not stereo");

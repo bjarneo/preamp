@@ -72,7 +72,7 @@ Rectangle {
                     } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                         const p = root.matches[root.cursor]
                         if (p) {
-                            preamp.send({cmd: "addPlugin", id: p.id})
+                            preamp.send({cmd: "addPlugin", plugin: p.id})
                             root.closed()
                         }
                     } else if (event.key === Qt.Key_Escape) {
@@ -146,7 +146,7 @@ Rectangle {
                     cursorShape: Qt.PointingHandCursor
                     onEntered: root.cursor = item.index
                     onClicked: {
-                        preamp.send({cmd: "addPlugin", id: item.modelData.id})
+                        preamp.send({cmd: "addPlugin", plugin: item.modelData.id})
                         root.closed()
                     }
                 }
