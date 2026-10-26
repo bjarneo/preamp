@@ -51,7 +51,7 @@ You can also open preamp from the app launcher.
 - A ten-band parametric equalizer for each channel. Edit L and R together or apart.
 - An automatic preamp. It cuts the input so that the loudest point of the curve stays at 0 dB.
 - A live analyzer of the signal after the equalizer.
-- Six built-in presets and your own presets. Keys `1` to `8` apply the built-in presets, then your most recent ones.
+- Twelve built-in presets and your own presets. Keys `1` to `6` apply the everyday presets. Keys `7` and `8` apply the other presets that you used last.
 - Headphone profiles from [AutoEq](https://github.com/jaakkopasanen/AutoEq), with more than 6,000 headphones.
 - LV2 and LADSPA effects after the equalizer, for example a compressor or a limiter from `lsp-plugins-lv2`.
 - A room reverb, stereo width and balance.

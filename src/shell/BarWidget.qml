@@ -4,8 +4,8 @@ import qs.Ui
 import qs.Commons
 import qs.Commons as Commons
 
-// The preamp mark and the preset in use. Click for the popover; right
-// click switches the equalizer off and on; scroll changes the volume.
+// The preamp mark. Click for the popover; right click switches the
+// equalizer off and on; scroll changes the volume.
 Panel {
   id: root
   moduleName: "preamp"
@@ -14,8 +14,6 @@ Panel {
   readonly property string variant: setting("variant", "full") === "quick" ? "quick" : "full"
   readonly property string shortcut: setting("shortcut", "super alt e")
   readonly property var st: link.state || {}
-  readonly property string label: !link.connected ? catalog.t("off")
-    : String(st.preset || "").replace(" · AutoEQ", "") + (st.dirty ? "*" : "")
 
   function openWindow() {
     root.close()
@@ -44,7 +42,9 @@ Panel {
     bar: root.bar
     text: ""
     hasVisualContent: true
-    fixedWidth: row.implicitWidth + 16
+    // The same slot as the icons beside it, along either bar.
+    fixedWidth: button.vertical ? -1 : Style.bar.iconSlot
+    fixedHeight: button.vertical ? Style.bar.iconSlot : -1
     tooltipText: link.connected ? "preamp · " + String(root.st.outputLabel || "") : catalog.t("preamp is not running")
 
     onPressed: function(b) {
@@ -62,26 +62,15 @@ Panel {
       color: swatch.hl
       visible: root.opened
     }
-    Row {
-      id: row
-      x: 8
-      anchors.verticalCenter: parent.verticalCenter
-      spacing: 7
+    // The bar's text color, like every other bar icon. The output block
+    // dims as much as a dimmed bar widget while the equalizer is off.
+    Mark {
+      readonly property color ink: button.foreground
+      anchors.centerIn: parent
+      size: 14
       scale: button.pressScale
-
-      Mark {
-        anchors.verticalCenter: parent.verticalCenter
-        size: 14
-        input: swatch.mu
-        output: link.connected && root.st.bypass !== true ? swatch.ac : swatch.mu
-      }
-      PText {
-        anchors.verticalCenter: parent.verticalCenter
-        font.family: button.fontFamily
-        font.pixelSize: button.fontSize
-        color: button.foreground
-        text: root.label
-      }
+      input: ink
+      output: link.connected && root.st.bypass !== true ? ink : Qt.rgba(ink.r, ink.g, ink.b, .45)
     }
   }
 
