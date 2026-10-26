@@ -48,6 +48,27 @@ Every action of the window must also work from scripts. When you add an action:
 2. Add the English text and the translation to each file in `src/i18n/`. Keep the keys sorted.
 3. Run `bin/test`. The test names each catalog that misses the string.
 
+## Change the bar widget
+
+The widget in `src/shell/` must load on Omarchy 4.0.6 and later. Use only the shell API that Omarchy 4.0.6 has:
+
+- Get the strings from `Strings.qml`, not from `Commons.Translations`.
+- Put the popover in `KeyboardPanel` as children, not in its `content` property.
+- Before you use a newer property, check it with `in`, as `BarWidget.qml` does for `pressScale`.
+
+The test `barWidgetLoadsOnOmarchy40` fails when the widget uses `Commons.Translations`, `Commons.I18n` or the lazy content of `KeyboardPanel`.
+
+To check the widget against the Omarchy 4.0.6 shell, run:
+
+```sh
+git clone --depth 1 --branch v4.0.6 https://github.com/omacom/omarchy /tmp/omarchy-4.0.6
+mkdir -p /tmp/qs-4.0.6/qs
+ln -s /tmp/omarchy-4.0.6/shell/Commons /tmp/omarchy-4.0.6/shell/Ui /tmp/qs-4.0.6/qs/
+cd src/shell && /usr/lib/qt6/bin/qmllint -I /tmp/qs-4.0.6 -I /usr/lib/qt6/qml *.qml
+```
+
+Only `was not found` and `Could not find property` show an API that Omarchy 4.0.6 does not have. You can ignore the other warnings. `qmllint` cannot see the members of `Style.bar`, `Style.font`, `parent` and `Loader.item`.
+
 ## Run a second daemon for tests
 
 To test the service without a change to your own setup, run a second daemon with its own socket, sink, settings and output:

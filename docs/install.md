@@ -1,6 +1,6 @@
 # Install preamp
 
-preamp runs on Omarchy with the Omarchy shell, PipeWire and WirePlumber. The release package is for `x86_64`. On an ARM machine, build from source.
+preamp runs on Omarchy 4.0.6 or later, with the Omarchy shell, PipeWire and WirePlumber. The release package is for `x86_64`. On an ARM machine, build from source.
 
 ## Install the release package
 
@@ -50,11 +50,12 @@ Do the steps in order. If a step fails, stop and report the command and its erro
 
    ```sh
    uname -m
+   omarchy version
    command -v omarchy-shell
    systemctl --user is-active pipewire.service wireplumber.service
    ```
 
-   `uname -m` must print `x86_64`. Both services must be `active`. On `aarch64`, follow "Build from source" instead.
+   `uname -m` must print `x86_64`. `omarchy version` must print 4.0.6 or later, or `dev`. Both services must be `active`. On `aarch64`, follow "Build from source" instead.
 
 2. Find the package of the latest release:
 

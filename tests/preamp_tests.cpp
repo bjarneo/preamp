@@ -361,6 +361,26 @@ private slots:
         QVERIFY2(missing.isEmpty(), qPrintable("no command line sends: " + missing.join(", ")));
     }
 
+    void barWidgetLoadsOnOmarchy40() {
+        // Omarchy 4.0.6 has no Commons.Translations, no Commons.I18n and no
+        // lazy content in KeyboardPanel. A widget that uses one of them does
+        // not load there at all.
+        const QDir dir(QStringLiteral(PREAMP_SOURCE_DIR "/src/shell"));
+        static const QRegularExpression comment(QStringLiteral("//[^\n]*"));
+        static const QRegularExpression newer(QStringLiteral("Commons\\.(Translations|I18n)|^\\s*content:|loadedContent|ensureContent\\("),
+                                              QRegularExpression::MultilineOption);
+        QStringList found;
+        for (const QString &name : dir.entryList({"*.qml", "*.js"})) {
+            QFile file(dir.filePath(name));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const QString source = QString::fromUtf8(file.readAll()).remove(comment);
+            if (const QRegularExpressionMatch m = newer.match(source); m.hasMatch())
+                found << name + ": " + m.captured(0).trimmed();
+        }
+        QVERIFY(dir.entryList({"*.qml"}).size() > 5);
+        QVERIFY2(found.isEmpty(), qPrintable("needs Omarchy 4.5: " + found.join(", ")));
+    }
+
     void miniCurveShowsThePresetShape() {
         // The preset card's thumbnail: Bass boost sits well above the zero
         // line at the low end and on it at the high end.

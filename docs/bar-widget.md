@@ -10,6 +10,8 @@ The widget is the preamp mark in the bar color. The tall block dims while the eq
 
 To put the widget on the bar, run `preamp shell install`. The command copies the widget to `~/.config/omarchy/plugins/preamp/` and puts it before the audio widget.
 
+The widget works on Omarchy 4.0.6 and later. If it does not show in the bar, see [Troubleshooting](troubleshooting.md#the-bar-widget-does-not-show).
+
 ## Popover
 
 The full popover shows the outputs, the volume, the everyday presets with the ten bands, and the volume of each app. The quick popover is smaller.

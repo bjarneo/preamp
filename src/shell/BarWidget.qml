@@ -2,10 +2,13 @@ import QtQuick
 import Quickshell
 import qs.Ui
 import qs.Commons
-import qs.Commons as Commons
 
 // The preamp mark. Click for the popover; right click switches the
 // equalizer off and on; scroll changes the volume.
+//
+// The widget uses only the shell API that Omarchy 4.0 has too: its own
+// strings, and the popover as children of KeyboardPanel, not its lazy
+// content property from Omarchy 4.5.
 Panel {
   id: root
   moduleName: "preamp"
@@ -14,6 +17,9 @@ Panel {
   readonly property string variant: setting("variant", "full") === "quick" ? "quick" : "full"
   readonly property string shortcut: setting("shortcut", "super alt e")
   readonly property var st: link.state || {}
+  // The popover is built the first time it opens and stays after that.
+  property bool popoverBuilt: false
+  onOpenedChanged: if (opened) popoverBuilt = true
 
   function openWindow() {
     root.close()
@@ -23,9 +29,8 @@ Panel {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  Commons.Translations {
+  Strings {
     id: catalog
-    directory: Qt.resolvedUrl("i18n")
   }
 
   Tokens {
@@ -68,7 +73,7 @@ Panel {
       readonly property color ink: button.foreground
       anchors.centerIn: parent
       size: 14
-      scale: button.pressScale
+      scale: "pressScale" in button ? button.pressScale : 1
       input: ink
       output: link.connected && root.st.bypass !== true ? ink : Qt.rgba(ink.r, ink.g, ink.b, .45)
     }
@@ -81,11 +86,12 @@ Panel {
     bar: root.bar
     open: root.opened
     padding: 0
-    focusTarget: panel.loadedContent
+    focusTarget: keys
     contentWidth: panel.fittedContentWidth(root.variant === "quick" ? 356 : 384)
-    contentHeight: panel.fittedContentHeight(panel.loadedContentHeight)
+    contentHeight: panel.fittedContentHeight(keys.implicitHeight)
 
-    content: PanelKeyCatcher {
+    PanelKeyCatcher {
+      id: keys
       implicitHeight: body.item ? body.item.implicitHeight : 0
       anchors.fill: parent
       onCloseRequested: root.close()
@@ -105,7 +111,7 @@ Panel {
       Loader {
         id: body
         width: parent.width
-        active: link.connected
+        active: link.connected && root.popoverBuilt
         sourceComponent: root.variant === "quick" ? quick : full
       }
 

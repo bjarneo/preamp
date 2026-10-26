@@ -8,7 +8,7 @@ To see it with sound, watch the [25-second video](docs/preamp.mp4).
 
 ## Install
 
-You need Omarchy with the Omarchy shell, PipeWire and WirePlumber.
+You need Omarchy 4.0.6 or later, with the Omarchy shell, PipeWire and WirePlumber.
 
 To install the release package:
 

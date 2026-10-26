@@ -79,6 +79,7 @@
         <file alias="shell/Mark.qml">shell/Mark.qml</file>
         <file alias="shell/PText.qml">shell/PText.qml</file>
         <file alias="shell/QuickPopover.qml">shell/QuickPopover.qml</file>
+        <file alias="shell/Strings.qml">shell/Strings.qml</file>
         <file alias="shell/Tokens.qml">shell/Tokens.qml</file>
         <file alias="shell/VolumeBar.qml">shell/VolumeBar.qml</file>
         <file alias="shell/manifest.json">shell/manifest.json</file>

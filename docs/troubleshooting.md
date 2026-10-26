@@ -36,6 +36,17 @@ Start the service now and at each login:
 systemctl --user enable --now preamp.service
 ```
 
+## The bar widget does not show
+
+If the Omarchy shell log shows `Commons.Translations is not a type`, the widget comes from preamp 0.1.2 or earlier. That widget loads only on Omarchy 4.5 and later. From preamp 0.1.3, the widget also loads on Omarchy 4.0.6.
+
+1. Update preamp to 0.1.3 or later. See [Update](install.md#update).
+2. Install the widget again:
+
+   ```sh
+   preamp shell install
+   ```
+
 ## Audio breaks up when the computer is busy
 
 If audio breaks up under load, check that `rtkit` is installed:
