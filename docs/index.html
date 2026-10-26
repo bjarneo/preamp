@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>preamp · a system equalizer for Omarchy</title>
+<meta name="description" content="preamp is a system audio equalizer for Omarchy. Every app plays through it into your speakers or headphones.">
+<meta name="theme-color" content="#1a1b26">
+<meta name="color-scheme" content="dark">
+<meta property="og:type" content="website">
+<meta property="og:title" content="preamp · a system equalizer for Omarchy">
+<meta property="og:description" content="Pick a preset from the bar, shape ten bands in the window, or load a correction curve for your headphones.">
+<meta property="og:url" content="https://bjarneo.github.io/preamp/">
+<meta property="og:image" content="https://bjarneo.github.io/preamp/presets.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="preamp.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#1a1b26;
+  --bg-dark:#16161e;
+  --fg:#c0caf5;
+  --fg-2:#a1aad4;
+  --muted:#737aa2;
+  --line:#3b4261;
+  --line-soft:#292e42;
+  --accent:#7aa2f7;
+  --accent-2:#7dcfff;
+  --green:#9ece6a;
+  --yellow:#e0af68;
+}
+html{background:var(--bg)}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:14px;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{color:var(--accent-2)}
+:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+::selection{background:var(--line-soft)}
+figure{margin:0}
+dl,dd,ul{margin:0;padding:0}
+ul{list-style:none}
+img{display:block;width:100%;height:auto}
+
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+.section{max-width:1120px;margin:0 auto;padding:112px 24px 0;scroll-margin-top:42px}
+.split{display:flex;flex-wrap:wrap;gap:48px}
+.accent{color:var(--accent)}
+.fg{color:var(--fg)}
+.str{color:var(--green)}
+
+/* header */
+.top{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line)}
+.top .wrap{min-height:42px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;color:var(--fg);font-size:13px}
+.brand:hover{color:var(--fg)}
+.brand b{font-weight:700}
+.brand .slash{color:var(--muted)}
+.mark{position:relative;width:18px;height:18px;flex:none}
+.mark i{position:absolute;width:28%}
+.mark .lo{left:16%;top:57%;height:25%;background:var(--muted)}
+.mark .hi{left:56%;top:18%;height:64%;background:var(--accent)}
+.nav{display:flex;align-items:center;gap:18px;flex-wrap:wrap;font-size:12px}
+.nav a{color:var(--muted)}
+.nav a:hover{color:var(--fg)}
+.nav .gh{display:inline-flex;align-items:center;box-sizing:border-box;height:26px;padding:0 10px;border:1px solid var(--line);color:var(--fg)}
+.nav .gh:hover{border-color:var(--muted);color:var(--fg)}
+
+/* buttons */
+.btns{display:flex;flex-wrap:wrap;gap:10px}
+.btn{display:inline-flex;align-items:center;box-sizing:border-box;height:38px;padding:0 18px;font-size:13px}
+.btn-primary{background:var(--accent);color:var(--bg-dark);font-weight:600}
+.btn-primary:hover{background:var(--accent-2);color:var(--bg-dark)}
+.btn-ghost{border:1px solid var(--line);color:var(--fg)}
+.btn-ghost:hover{border-color:var(--muted);color:var(--fg)}
+
+/* type */
+.eyebrow{font-size:12px;color:var(--muted);margin-bottom:10px}
+.h2{margin:0 0 12px;font-size:28px;line-height:1.25;font-weight:600;letter-spacing:-0.01em;text-wrap:balance}
+.lead{margin:0 0 28px;max-width:720px;font-size:14px;line-height:1.7;color:var(--fg-2);text-wrap:pretty}
+.body{margin:0 0 14px;font-size:14px;line-height:1.7;color:var(--fg-2);text-wrap:pretty}
+.body:last-child{margin-bottom:0}
+.note{margin:0;font-size:12px;line-height:1.7;color:var(--muted)}
+
+/* hero */
+.hero{max-width:1120px;margin:0 auto;padding:72px 24px 0;align-items:center}
+.hero-text{flex:1 1 340px;min-width:0;display:flex;flex-direction:column;gap:22px}
+.meta{display:flex;gap:10px;font-size:12px;color:var(--muted)}
+.hero h1{margin:0;font-size:clamp(32px,4.4vw,46px);line-height:1.12;font-weight:700;letter-spacing:-0.02em;text-wrap:balance}
+.hero p{margin:0;font-size:15px;line-height:1.7;color:var(--fg-2);text-wrap:pretty}
+.hero-media{flex:1.5 1 480px;min-width:0;display:flex;flex-direction:column;gap:10px}
+.hero-media>a{display:block;border:1px solid var(--line);background:var(--bg-dark)}
+.hero-media img{aspect-ratio:960/600}
+.hero-media figcaption{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+
+/* terminal */
+.term{background:var(--bg-dark);border:1px solid var(--line);min-width:0}
+.term.on{border-color:var(--accent)}
+.term-head{display:flex;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted)}
+.term-head span:first-child{color:var(--fg)}
+.term-body{padding:14px;font-size:13px;line-height:1.9;overflow-x:auto}
+.term-body div{white-space:pre}
+.p{color:var(--muted);user-select:none;margin-right:1ch}
+.cmd{background:var(--bg-dark);border:1px solid var(--line);padding:12px 14px;font-size:13px;overflow-x:auto;white-space:pre}
+
+/* install */
+.install-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px}
+.install-col{display:flex;flex-direction:column;gap:12px;min-width:0}
+.bind{margin-top:16px;border:1px solid var(--line);display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;padding:14px}
+.bind-text{font-size:12px;color:var(--fg-2)}
+.bind-code{font-size:13px;white-space:pre;overflow-x:auto;max-width:100%}
+
+/* features */
+.features{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px}
+.feature{border:1px solid var(--line);padding:13px 14px 16px;display:grid;grid-template-columns:20px minmax(0,1fr);column-gap:8px;row-gap:6px}
+.feature .n{font-size:12px;color:var(--muted)}
+.feature .t{font-size:13px}
+.feature .d{grid-column:2;font-size:12px;line-height:1.6;color:var(--fg-2)}
+.feature .hl{color:var(--yellow)}
+
+/* views */
+.shot{aspect-ratio:1096/650;border:1px solid var(--line);box-sizing:border-box}
+.view-main{margin:0 0 32px;display:flex;flex-direction:column;gap:12px}
+.view-main figcaption{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;line-height:1.6}
+.view-main figcaption span:last-child{color:var(--fg-2);flex:1 1 360px}
+.views{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:24px 16px}
+.views figure{display:flex;flex-direction:column;gap:12px}
+.views figcaption{display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:1.6}
+.views figcaption span:last-child{color:var(--fg-2)}
+.label{color:var(--accent)}
+
+/* autoeq */
+.autoeq{align-items:center}
+.autoeq-text{flex:1 1 360px;min-width:0}
+.autoeq-demo{flex:1 1 400px;min-width:0;display:flex;flex-direction:column;gap:12px}
+.presets{border:1px solid var(--line);padding:16px}
+.presets-head{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:10px}
+.preset{display:flex;align-items:center;gap:10px;height:28px;padding:0 8px;font-size:13px}
+.preset.on{background:var(--line-soft)}
+.preset .k{width:12px;text-align:right;color:var(--muted)}
+.preset .name{flex:1}
+.preset .dot{color:var(--accent);font-size:11px}
+
+/* key lists */
+.rows{border-top:1px solid var(--line-soft)}
+.rows>div{display:grid;grid-template-columns:96px minmax(0,1fr);gap:16px;padding:9px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
+.rows dt{color:var(--accent)}
+.rows.wide>div{grid-template-columns:120px minmax(0,1fr);padding:10px 0}
+
+/* widget */
+.widget{align-items:flex-start}
+.widget-text{flex:1 1 320px;min-width:0}
+.widget-text .body{margin-bottom:24px}
+.widget-text .note{margin:24px 0 10px}
+.popovers{flex:1.4 1 440px;min-width:0;display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.popovers figure{flex:1 1 220px;display:flex;flex-direction:column;gap:10px}
+.popovers figcaption{font-size:11px;color:var(--muted)}
+
+/* keys */
+.keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:32px}
+.keys>div{min-width:0}
+.keys h3{margin:0 0 10px;font-size:11px;font-weight:400;color:var(--muted)}
+
+/* cli */
+.cli{align-items:flex-start}
+.cli-text{flex:1 1 320px;min-width:0}
+.cli .term{flex:1.3 1 420px}
+
+/* how it works */
+.how .lead{max-width:760px}
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px}
+.node{flex:1 1 130px;border:1px solid var(--line);padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.node.on{border-color:var(--accent);background:var(--line-soft)}
+.node span:first-child{font-size:11px;color:var(--muted)}
+.node span:last-child{font-size:13px}
+.arrow{flex:none;display:flex;align-items:center;color:var(--muted)}
+.facts{margin-top:28px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:0 32px;border-top:1px solid var(--line-soft)}
+.facts li{display:grid;grid-template-columns:16px minmax(0,1fr);gap:10px;padding:12px 0;border-bottom:1px solid var(--line-soft);font-size:13px;line-height:1.6;color:var(--fg-2)}
+.facts li::before{content:"·";color:var(--accent)}
+
+/* end */
+.end{max-width:1120px;margin:0 auto;padding:128px 24px 96px;display:flex;flex-direction:column;align-items:flex-start;gap:20px}
+.end h2{margin:0;font-size:clamp(28px,3.6vw,40px);line-height:1.15;font-weight:700;letter-spacing:-0.02em;text-wrap:balance}
+
+/* footer */
+.foot{border-top:1px solid var(--line)}
+.foot .wrap{min-height:30px;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+.foot-tags{display:flex;gap:18px;flex-wrap:wrap}
+.foot a{color:var(--muted)}
+.foot a:hover{color:var(--fg)}
+
+@media (max-width:600px){
+  .top{position:static}
+  .top .wrap{padding-top:8px;padding-bottom:8px}
+  .flow{flex-direction:column}
+  .node{flex:none}
+  .arrow{justify-content:center;font-size:0}
+  .arrow::after{content:"↓";font-size:14px}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a href="#top" class="brand">
+      <span class="mark" aria-hidden="true"><i class="lo"></i><i class="hi"></i></span>
+      <b>preamp</b><span class="slash">/</span><span>for omarchy</span>
+    </a>
+    <nav class="nav">
+      <a href="#install">install</a>
+      <a href="#features">features</a>
+      <a href="#views">views</a>
+      <a href="#keys">keys</a>
+      <a href="#cli">cli</a>
+      <a href="https://github.com/bjarneo/preamp" class="gh">github</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <section class="hero split">
+    <div class="hero-text">
+      <div class="meta"><span class="accent">v0.1.1</span><span>·</span><span>system equalizer</span></div>
+      <h1>Tune everything you hear on <span class="accent">Omarchy</span>.</h1>
+      <p>Every app plays through preamp into your speakers or headphones. Pick a preset from the bar, shape ten bands in the window, or load a correction curve for your headphones.</p>
+      <div class="btns">
+        <a href="#install" class="btn btn-primary">install</a>
+        <a href="https://github.com/bjarneo/preamp" class="btn btn-ghost">view on github</a>
+      </div>
+      <div class="note">Follows your Omarchy theme, rounding and language.</div>
+    </div>
+    <figure class="hero-media">
+      <a href="preamp.mp4">
+        <img src="preamp.gif" width="960" height="600" fetchpriority="high" alt="preamp on Omarchy: a preset from the bar, a band in the window, then bypass to compare">
+      </a>
+      <figcaption>
+        <span>a preset from the bar, a band in the window, then bypass to compare</span>
+        <a href="preamp.mp4">watch with sound · 25 s</a>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section id="install" class="section">
+    <div class="eyebrow">install</div>
+    <h2 class="h2">Four commands and it's on the bar.</h2>
+    <p class="lead">You need Omarchy with the Omarchy shell, PipeWire and WirePlumber.</p>
+    <div class="install-grid">
+      <div class="install-col">
+        <div class="term on">
+          <div class="term-head"><span>release package</span><span>sh</span></div>
+          <div class="term-body">
+            <div><span class="p">$</span>curl -LO https://github.com/bjarneo/preamp/releases/download/v0.1.1/preamp-0.1.1-1-x86_64.pkg.tar.zst</div>
+            <div><span class="p">$</span>sudo pacman -U preamp-0.1.1-1-x86_64.pkg.tar.zst</div>
+            <div><span class="p">$</span>systemctl --user enable --now preamp.service</div>
+            <div><span class="p">$</span>preamp shell install</div>
+          </div>
+        </div>
+        <p class="note">pacman installs the dependencies. The service starts now and at each login. The last command puts the preamp widget on the Omarchy bar.</p>
+      </div>
+      <div class="install-col">
+        <div class="term">
+          <div class="term-head"><span>from source</span><span>sh</span></div>
+          <div class="term-body">
+            <div><span class="p">$</span>git clone https://github.com/bjarneo/preamp.git</div>
+            <div><span class="p">$</span>cd preamp</div>
+            <div><span class="p">$</span>./bin/install</div>
+          </div>
+        </div>
+        <p class="note">bin/install builds the package with makepkg, installs it, starts the service and puts the widget on the bar.</p>
+      </div>
+    </div>
+    <div class="bind">
+      <div class="bind-text">Open the window with <span class="accent">super alt e</span>. Add to <span class="fg">~/.config/hypr/bindings.lua</span>:</div>
+      <div class="bind-code">o.bind(<span class="str">"SUPER + ALT + E"</span>, <span class="str">"preamp"</span>, { launch = <span class="str">"preamp"</span> })</div>
+    </div>
+  </section>
+
+  <section id="features" class="section">
+    <div class="eyebrow">features</div>
+    <h2 class="h2" style="margin-bottom:28px">Everything between your apps and your speakers.</h2>
+    <div class="features">
+      <div class="feature"><span class="n">1</span><span class="t">Ten bands per channel</span><span class="d">A parametric equalizer for each channel. Edit L and R together or apart.</span></div>
+      <div class="feature"><span class="n">2</span><span class="t">Automatic preamp</span><span class="d">It cuts the input so that the loudest point of the curve stays at 0 dB.</span></div>
+      <div class="feature"><span class="n">3</span><span class="t">Live analyzer</span><span class="d">See the signal after the equalizer, under the curve you are shaping.</span></div>
+      <div class="feature"><span class="n">4</span><span class="t">Presets on number keys</span><span class="d">Twelve built-in presets and your own. Keys 1 to 6 apply the everyday presets, 7 and 8 the others you used last.</span></div>
+      <div class="feature"><span class="n">5</span><span class="t">AutoEq headphone profiles</span><span class="d">Correction curves from AutoEq, for more than 6,000 headphones.</span></div>
+      <div class="feature"><span class="n">6</span><span class="t">LV2 and LADSPA effects</span><span class="d">Effects after the equalizer, for example a compressor or a limiter from lsp-plugins-lv2.</span></div>
+      <div class="feature"><span class="n">7</span><span class="t">Room, width, balance</span><span class="d">A room reverb, stereo width and balance.</span></div>
+      <div class="feature"><span class="n">8</span><span class="t">Volume to <span class="hl">150%</span></span><span class="d">Plus volume and mute for each app.</span></div>
+      <div class="feature"><span class="n">9</span><span class="t">Auto-switch rules</span><span class="d">A preset can follow an output, an app in a call, or a fullscreen app.</span></div>
+      <div class="feature"><span class="n">10</span><span class="t">Output notifications</span><span class="d">A notification when preamp moves to a new output.</span></div>
+      <div class="feature"><span class="n">11</span><span class="t">Follows your theme</span><span class="d">The window and the bar widget take your Omarchy colors, rounding and font.</span></div>
+      <div class="feature"><span class="n">12</span><span class="t">50 languages</span><span class="d">The same set as Omarchy.</span></div>
+    </div>
+  </section>
+
+  <section id="views" class="section">
+    <div class="eyebrow">views</div>
+    <h2 class="h2">Four views. <span class="accent">tab</span> moves between them.</h2>
+    <p class="lead">The presets view is the everyday view. Studio, Modes and Signal chain have the detailed controls. The window opens on the view you used last.</p>
+    <figure class="view-main">
+      <img class="shot" src="presets.png" width="1096" height="650" loading="lazy" decoding="async" alt="The presets view: one card for each preset with its curve, the output and the volume">
+      <figcaption><span class="label">presets</span><span>One card for each preset with the shape of its curve, and the output and volume below the cards. Click a card or press its number to use the preset.</span></figcaption>
+    </figure>
+    <div class="views">
+      <figure>
+        <img class="shot" src="studio.png" width="1096" height="650" loading="lazy" decoding="async" alt="The studio view">
+        <figcaption><span class="label">studio</span><span>The curve over the analyzer, the ten bands, presets and effects.</span></figcaption>
+      </figure>
+      <figure>
+        <img class="shot" src="modes.png" width="1096" height="650" loading="lazy" decoding="async" alt="The modes view">
+        <figcaption><span class="label">modes</span><span>Basic, graphic and parametric editing, and the command bar.</span></figcaption>
+      </figure>
+      <figure>
+        <img class="shot" src="chain.png" width="1096" height="650" loading="lazy" decoding="async" alt="The signal chain view">
+        <figcaption><span class="label">signal chain</span><span>Apps, equalizer, effects, room and output in the order the audio flows, and the auto-switch rules.</span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="autoeq" class="section split autoeq">
+    <div class="autoeq-text">
+      <div class="eyebrow">autoeq</div>
+      <h2 class="h2">Correct your headphones by name.</h2>
+      <p class="body">preamp reads the <a href="https://github.com/jaakkopasanen/AutoEq">AutoEq</a> profiles, more than 6,000 headphones. Give it the name of your model and the correction becomes a preset.</p>
+      <p class="body">Type <span class="accent">:pin</span> in the command bar and the preset applies each time that output is selected. When you connect those headphones again, preamp moves to them and applies it.</p>
+    </div>
+    <div class="autoeq-demo">
+      <div class="term">
+        <div class="term-head"><span>terminal</span><span>sh</span></div>
+        <div class="term-body">
+          <div><span class="p">$</span>preamp autoeq <span class="str">"hd 650"</span></div>
+        </div>
+      </div>
+      <div class="presets" aria-label="The preset list with the new AutoEq preset selected">
+        <div class="presets-head"><span>presets</span><span>1–8</span></div>
+        <div class="preset"><span class="k">5</span><span>Night</span></div>
+        <div class="preset"><span class="k">6</span><span>Podcast</span></div>
+        <div class="preset on"><span class="k">7</span><span class="name">HD 650 · AutoEQ</span><span class="dot">●</span></div>
+        <div class="preset"><span class="k">8</span><span>WH-1000XM5 · AutoEQ</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="widget" class="section split widget">
+    <div class="widget-text">
+      <div class="eyebrow">bar widget</div>
+      <h2 class="h2">One click from the bar.</h2>
+      <p class="body">The widget is the preamp mark in the bar color. The tall block dims while the equalizer is off.</p>
+      <dl class="rows wide">
+        <div><dt>click</dt><dd>open the popover</dd></div>
+        <div><dt>right-click</dt><dd>bypass the equalizer</dd></div>
+        <div><dt>scroll</dt><dd>change the volume</dd></div>
+      </dl>
+      <p class="note">To show the quick popover:</p>
+      <div class="cmd"><span class="p">$</span>omarchy bar set preamp variant quick</div>
+    </div>
+    <div class="popovers">
+      <figure style="max-width:388px">
+        <img src="popover-full.png" width="388" height="640" loading="lazy" decoding="async" alt="The full popover">
+        <figcaption>full popover</figcaption>
+      </figure>
+      <figure style="max-width:360px">
+        <img src="popover-quick.png" width="360" height="362" loading="lazy" decoding="async" alt="The quick popover">
+        <figcaption>quick popover</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="keys" class="section">
+    <div class="eyebrow">keys</div>
+    <h2 class="h2">Your hands stay on the keyboard.</h2>
+    <p class="lead">Press <span class="accent">?</span> in the window to show the keys for the view.</p>
+    <div class="keys">
+      <div>
+        <h3>presets view</h3>
+        <dl class="rows">
+          <div><dt>h l ← →</dt><dd>previous or next preset</dd></div>
+          <div><dt>j k ↓ ↑</dt><dd>preset above or below</dd></div>
+          <div><dt>- +</dt><dd>volume down or up by 5%</dd></div>
+          <div><dt>1–8</dt><dd>apply a preset</dd></div>
+          <div><dt>b</dt><dd>bypass the equalizer</dd></div>
+          <div><dt>tab</dt><dd>next view</dd></div>
+          <div><dt>q</dt><dd>quit</dd></div>
+        </dl>
+      </div>
+      <div>
+        <h3>other views</h3>
+        <dl class="rows">
+          <div><dt>h l ← →</dt><dd>select a band</dd></div>
+          <div><dt>j k ↓ ↑</dt><dd>band gain down or up</dd></div>
+          <div><dt>H L</dt><dd>band frequency down or up</dd></div>
+          <div><dt>J K</dt><dd>band Q down or up</dd></div>
+          <div><dt>0</dt><dd>set the band gain to 0</dd></div>
+          <div><dt>c</dt><dd>channel: L+R, L or R</dd></div>
+          <div><dt>m</dt><dd>mode: basic, graphic or parametric</dd></div>
+          <div><dt>:</dt><dd>open the command bar</dd></div>
+        </dl>
+      </div>
+      <div>
+        <h3>command bar · also finds presets and AutoEq profiles</h3>
+        <dl class="rows">
+          <div><dt>w NAME</dt><dd>save the curve as a preset</dd></div>
+          <div><dt>rm NAME</dt><dd>delete a saved preset</dd></div>
+          <div><dt>pin</dt><dd>apply this preset each time this output is selected</dd></div>
+          <div><dt>unpin</dt><dd>remove the pin from this output</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <section id="cli" class="section split cli">
+    <div class="cli-text">
+      <div class="eyebrow">command line</div>
+      <h2 class="h2">Script it.</h2>
+      <p class="body">Each command starts the audio service if it is not running, exits with 0 or 1 and writes errors to stderr. Add <span class="accent">--json</span> to get the full answer of the service.</p>
+      <p class="body">To teach coding agents to use these commands, run <span class="fg">preamp skill install</span>.</p>
+    </div>
+    <div class="term">
+      <div class="term-head"><span>terminal</span><span>sh</span></div>
+      <div class="term-body">
+        <div><span class="p">$</span>preamp status</div>
+        <div><span class="p">$</span>preamp preset <span class="str">"Bass boost"</span></div>
+        <div><span class="p">$</span>preamp autoeq <span class="str">"hd 650"</span></div>
+        <div><span class="p">$</span>preamp band 3 --freq 125 --gain -2 --q 1.4</div>
+        <div><span class="p">$</span>preamp bypass on</div>
+        <div><span class="p">$</span>preamp outputs</div>
+        <div><span class="p">$</span>preamp output <span class="str">"Laptop Speakers"</span></div>
+        <div><span class="p">$</span>preamp volume 120</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" class="section how">
+    <div class="eyebrow">how it works</div>
+    <h2 class="h2">One sink in front of your output.</h2>
+    <p class="lead">The preamp.service user service runs preamp daemon. The daemon creates a PipeWire sink named preamp and makes it the default output. Apps play into this sink. The daemon runs the audio through the equalizer and plays it into the output that you select.</p>
+    <div class="flow">
+      <div class="node"><span>apps</span><span>Spotify, Discord…</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node on"><span>default sink</span><span>preamp</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><span>eq</span><span>ten bands</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><span>plugins</span><span>lv2 · ladspa</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><span>spatial</span><span>room · width</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><span>output</span><span>your device</span></div>
+    </div>
+    <ul class="facts">
+      <li>When you select an output in the Omarchy audio panel, preamp plays into that output and stays the default.</li>
+      <li>When you connect headphones that you used before, preamp moves to them, applies their pinned preset and shows a notification.</li>
+      <li>The volume in preamp is the volume of the output device.</li>
+      <li>On a laptop with an Omarchy speaker tuning, preamp plays into the tuning, so the tuning still applies.</li>
+      <li>When the service stops, it gives the default output back to the device that it played into.</li>
+      <li>Settings live in ~/.config/preamp/config.json. The AutoEq index is cached in ~/.cache/preamp/ for one week.</li>
+    </ul>
+  </section>
+
+  <section class="end">
+    <h2>Press <span class="accent">1</span> and hear the difference.</h2>
+    <div class="btns">
+      <a href="#install" class="btn btn-primary">install preamp</a>
+      <a href="https://github.com/bjarneo/preamp/releases" class="btn btn-ghost">releases</a>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-tags">
+      <span><span class="accent">mit</span> license</span>
+      <span><span class="accent">c++</span> and qt quick</span>
+      <span><span class="accent">pipewire</span> and lilv</span>
+    </div>
+    <a href="https://github.com/bjarneo/preamp">github.com/bjarneo/preamp</a>
+  </div>
+</footer>
+
+</body>
+</html>
