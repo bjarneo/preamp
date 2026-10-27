@@ -104,6 +104,8 @@ The service keeps the values in range. A gain is -12 to 12 dB, a frequency is 20
 | `togglePlugin` | `i` | |
 | `removePlugin` | `i` | |
 | `movePlugin` | `i`, `to` | |
+| `pluginParams` | `i` | `params`: the controls of effect `i`, each with `symbol`, `name`, `min`, `max`, `default`, `value`, `integer`, `toggled`, `logarithmic` and `options`, a list of `value` and `label`. A side without a bound is ±3.4e38. |
+| `setPluginParam` | `i`, `param`: a `symbol` from `pluginParams`, `value`. Without `value`, the control goes back to its default. | `value`: the value after it is held in range |
 
 ### Rules
 

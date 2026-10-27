@@ -101,6 +101,71 @@ bool number(const QString &text, double low, double high, const QString &what, d
     return false;
 }
 
+// A control of an effect, as `preamp plugin params` lists it. A side
+// without a bound comes as +/-FLT_MAX.
+bool bounded(double v) { return std::abs(v) < 1e38; }
+
+QString formatParam(const QJsonObject &param, double value) {
+    if (param.value("toggled").toBool())
+        return value > 0 ? "on" : "off";
+    for (const auto &o : param.value("options").toArray())
+        if (o.toObject().value("value").toDouble() == value)
+            return o.toObject().value("label").toString();
+    return QString::number(value, 'g', 5);
+}
+
+QString paramRange(const QJsonObject &param) {
+    if (param.value("toggled").toBool())
+        return "on or off";
+    const QJsonArray options = param.value("options").toArray();
+    if (!options.isEmpty()) {
+        QStringList labels;
+        for (const auto &o : options)
+            labels << o.toObject().value("label").toString();
+        return "(" + labels.join(", ") + ")";
+    }
+    const double min = param.value("min").toDouble(), max = param.value("max").toDouble();
+    return QStringLiteral("(%1 to %2)")
+        .arg(bounded(min) ? QString::number(min, 'g', 5) : "any", bounded(max) ? QString::number(max, 'g', 5) : "any");
+}
+
+// A number, on or off for a switch, or the label of a named value.
+bool paramValue(const QJsonObject &param, const QString &text, double *value) {
+    if (param.value("toggled").toBool()) {
+        const QString t = text.toLower();
+        if (t == "on" || t == "true" || t == "1" || t == "off" || t == "false" || t == "0") {
+            *value = (t == "on" || t == "true" || t == "1") ? 1 : 0;
+            return true;
+        }
+        err(QStringLiteral("%1 is on or off").arg(param.value("name").toString()));
+        return false;
+    }
+    const QJsonArray options = param.value("options").toArray();
+    QStringList labels;
+    for (const auto &o : options) {
+        if (o.toObject().value("label").toString().compare(text, Qt::CaseInsensitive) == 0) {
+            *value = o.toObject().value("value").toDouble();
+            return true;
+        }
+        labels << o.toObject().value("label").toString();
+    }
+    // A list of named values takes only those names.
+    if (param.value("integer").toBool() && !labels.isEmpty()) {
+        err(QStringLiteral("%1 is %2 or %3").arg(param.value("name").toString(), labels.mid(0, labels.size() - 1).join(", "), labels.last()));
+        return false;
+    }
+    const double min = param.value("min").toDouble(), max = param.value("max").toDouble();
+    if (bounded(min) && bounded(max))
+        return number(text, min, max, param.value("name").toString(), value);
+    bool ok = false;
+    *value = text.toDouble(&ok);
+    if (!ok || (bounded(min) && *value < min) || (bounded(max) && *value > max)) {
+        err(QStringLiteral("%1 is a number %2").arg(param.value("name").toString(), paramRange(param)));
+        return false;
+    }
+    return true;
+}
+
 // Places in the chain and rules count from 1 on the command line.
 bool place(const QString &text, int count, const QString &what, int *index) {
     bool ok = false;
@@ -356,6 +421,9 @@ void printHelp() {
         "  preamp plugin add ID|NAME           add an effect at the end of the chain\n"
         "  preamp plugin on|off|remove N       switch on, switch off or remove effect N\n"
         "  preamp plugin move N TO             move effect N to place TO\n"
+        "  preamp plugin params N              list the controls of effect N\n"
+        "  preamp plugin set N NAME VALUE|default\n"
+        "                                      set a control of effect N, or reset it\n"
         "\n"
         "Rules:\n"
         "  preamp rules                        list the pins and the auto-switch rules\n"
@@ -852,9 +920,57 @@ int run(const QStringList &argv) {
             return finish(send({{"cmd", "addPlugin"}, {"plugin", id}}), json, QStringLiteral("Added %1.").arg(name));
         }
         int i = 0;
-        if ((action == "on" || action == "off" || action == "remove" || action == "move") &&
+        if ((action == "on" || action == "off" || action == "remove" || action == "move" || action == "params" ||
+             action == "set") &&
             !place(args.value(2), int(chain.size()), "effect", &i))
             return 1;
+        if (action == "params" || action == "set") {
+            const QJsonObject r = send({{"cmd", "pluginParams"}, {"i", i}});
+            if (!r.value("ok").toBool())
+                return finish(r, json, {});
+            const QJsonArray params = r.value("params").toArray();
+            if (action == "params") {
+                if (json) {
+                    out(pretty(params));
+                    return 0;
+                }
+                if (params.isEmpty())
+                    out(QStringLiteral("Effect %1 has no controls.").arg(i + 1));
+                for (const auto &v : params) {
+                    const QJsonObject p = v.toObject();
+                    out(QStringLiteral("%1  %2  %3  %4")
+                            .arg(p.value("symbol").toString(), formatParam(p, p.value("value").toDouble()), paramRange(p),
+                                 p.value("name").toString()));
+                }
+                return 0;
+            }
+            const QString wanted = args.value(3);
+            const QString text = args.mid(4).join(' ');
+            QJsonObject param;
+            for (const auto &v : params) {
+                const QJsonObject p = v.toObject();
+                if (p.value("symbol").toString() == wanted || p.value("name").toString().compare(wanted, Qt::CaseInsensitive) == 0)
+                    param = p;
+            }
+            if (param.isEmpty() || text.isEmpty()) {
+                err(param.isEmpty() ? QStringLiteral("effect %1 has no control named %2. List them with: preamp plugin params %1").arg(i + 1).arg(wanted)
+                                    : QStringLiteral("usage: preamp plugin set N NAME VALUE|default"));
+                return 1;
+            }
+            QJsonObject m{{"cmd", "setPluginParam"}, {"i", i}, {"param", param.value("symbol").toString()}};
+            if (text != "default") {
+                double value = 0;
+                if (!paramValue(param, text, &value))
+                    return 1;
+                m.insert("value", value);
+            }
+            const QJsonObject reply = send(m);
+            return finish(reply, json,
+                          QStringLiteral("Set %1 of effect %2 to %3.")
+                              .arg(param.value("name").toString())
+                              .arg(i + 1)
+                              .arg(formatParam(param, reply.value("value").toDouble())));
+        }
         if (action == "on" || action == "off") {
             if (chain[i].toObject().value("on").toBool() == (action == "on"))
                 return finish({{"ok", true}}, json, QStringLiteral("Effect %1 is already %2.").arg(i + 1).arg(action));
@@ -869,7 +985,7 @@ int run(const QStringList &argv) {
             return finish(send({{"cmd", "movePlugin"}, {"i", i}, {"to", to}}), json,
                           QStringLiteral("Moved effect %1 to place %2.").arg(i + 1).arg(to + 1));
         }
-        err("usage: preamp plugin add ID|NAME | on|off|remove N | move N TO");
+        err("usage: preamp plugin add ID|NAME | on|off|remove|params N | move N TO | set N NAME VALUE");
         return 1;
     }
 

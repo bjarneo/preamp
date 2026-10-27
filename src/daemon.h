@@ -50,6 +50,10 @@ private:
         QString id, name, kind;
         bool on = false;
         QString error;
+        plugins::Values values = {}; // the controls set away from their default
+        // In the newest chain posted to the processor, which outlives this
+        // pointer: rebuildChain() replaces it before that chain can be freed.
+        plugins::Instance *live = nullptr;
     };
     struct Output {
         QString name;   // node.name to target

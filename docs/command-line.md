@@ -85,6 +85,9 @@ The limits for a band are:
 | `preamp plugin off N` | Turn off effect `N` |
 | `preamp plugin remove N` | Remove effect `N` |
 | `preamp plugin move N TO` | Move effect `N` to place `TO` |
+| `preamp plugin params N` | List the controls of effect `N` with their values and ranges |
+| `preamp plugin set N NAME VALUE` | Set a control of effect `N`. `NAME` is the symbol or the name from `params`. `VALUE` is a number, `on` or `off` for a switch, or the name of a value in a list. |
+| `preamp plugin set N NAME default` | Set a control of effect `N` back to its default |
 
 Effects and rules count from 1, in the order that `preamp plugins` and `preamp rules` show.
 
