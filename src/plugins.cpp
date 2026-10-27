@@ -4,6 +4,8 @@
 #include <QFileInfo>
 #include <QMutexLocker>
 #include <QStringList>
+#include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <dlfcn.h>
 #include <lilv/lilv.h>
@@ -12,6 +14,7 @@
 #include <lv2/core/lv2.h>
 #include <lv2/options/options.h>
 #include <lv2/parameters/parameters.h>
+#include <lv2/port-props/port-props.h>
 #include <lv2/urid/urid.h>
 #include <deque>
 #include <mutex>
@@ -71,8 +74,10 @@ enum : int {
 enum : int {
     HintBelow = 0x1,
     HintAbove = 0x2,
+    HintToggled = 0x4,
     HintSampleRate = 0x8,
     HintLogarithmic = 0x10,
+    HintInteger = 0x20,
     HintDefaultMask = 0x3C0,
     HintDefaultMinimum = 0x40,
     HintDefaultLow = 0x80,
@@ -146,10 +151,48 @@ float ladspaDefault(const LadspaRangeHint &hint, double rate) {
     }
 }
 
+// LADSPA ports have names only. "Attack time (ms)" becomes "attack_time_ms".
+QString ladspaSymbol(const char *name) {
+    QString symbol;
+    for (const QChar c : QString::fromUtf8(name).toLower()) {
+        if (c.isLetterOrNumber())
+            symbol += c;
+        else if (!symbol.isEmpty() && !symbol.endsWith('_'))
+            symbol += '_';
+    }
+    while (symbol.endsWith('_'))
+        symbol.chop(1);
+    return symbol;
+}
+
+QVector<Param> ladspaParams(const LadspaDescriptor *d, double rate) {
+    QVector<Param> params;
+    for (unsigned long p = 0; p < d->portCount; ++p) {
+        const int pd = d->portDescriptors[p];
+        if (!(pd & PortControl) || !(pd & PortInput))
+            continue;
+        const LadspaRangeHint &hint = d->portRangeHints[p];
+        const float scale = (hint.hints & HintSampleRate) ? float(rate) : 1.f;
+        Param param;
+        param.symbol = ladspaSymbol(d->portNames[p]);
+        param.name = QString::fromUtf8(d->portNames[p]);
+        param.port = uint32_t(p);
+        param.toggled = hint.hints & HintToggled;
+        param.integer = hint.hints & HintInteger;
+        param.logarithmic = hint.hints & HintLogarithmic;
+        param.min = param.toggled ? 0 : (hint.hints & HintBelow) ? hint.lower * scale : -FLT_MAX;
+        param.max = param.toggled ? 1 : (hint.hints & HintAbove) ? hint.upper * scale : FLT_MAX;
+        param.def = clamp(param, ladspaDefault(hint, rate));
+        params << param;
+    }
+    return params;
+}
+
 class LadspaInstance : public Instance {
 public:
-    LadspaInstance(const LadspaDescriptor *d, double rate, int copies)
-        : m_descriptor(d), m_controls(d->portCount, 0.f), m_scratch(MaxBlock, 0.f), m_silence(MaxBlock, 0.f) {
+    LadspaInstance(const LadspaDescriptor *d, double rate, int copies, const Values &values)
+        : Instance(d->portCount), m_descriptor(d), m_controls(d->portCount, 0.f), m_scratch(MaxBlock, 0.f),
+          m_silence(MaxBlock, 0.f) {
         for (unsigned long p = 0; p < d->portCount; ++p) {
             const int pd = d->portDescriptors[p];
             if (pd & PortAudio) {
@@ -157,9 +200,12 @@ public:
                     m_audioIn.push_back(p);
                 else
                     m_audioOut.push_back(p);
-            } else if ((pd & PortControl) && (pd & PortInput)) {
-                m_controls[p] = ladspaDefault(d->portRangeHints[p], rate);
             }
+        }
+        for (const Param &param : ladspaParams(d, rate)) {
+            m_controls[param.port] = values.contains(param.symbol) ? clamp(param, values[param.symbol]) : param.def;
+            set(param.port, m_controls[param.port]);
+            m_controlIn.push_back(param.port);
         }
         for (int i = 0; i < copies; ++i) {
             LadspaHandle h = d->instantiate(d, static_cast<unsigned long>(rate));
@@ -185,6 +231,8 @@ public:
     bool ok() const { return !m_handles.empty() && !m_audioIn.empty() && !m_audioOut.empty(); }
 
     void run(const float *const in[2], float *const out[2], uint32_t frames) override {
+        for (unsigned long p : m_controlIn)
+            m_controls[p] = target(uint32_t(p));
         const bool stereo = m_audioIn.size() >= 2 && m_audioOut.size() >= 2;
         for (size_t k = 0; k < m_handles.size(); ++k) {
             LadspaHandle h = m_handles[k];
@@ -204,7 +252,7 @@ public:
 private:
     const LadspaDescriptor *m_descriptor;
     std::vector<LadspaHandle> m_handles;
-    std::vector<unsigned long> m_audioIn, m_audioOut;
+    std::vector<unsigned long> m_audioIn, m_audioOut, m_controlIn;
     std::vector<float> m_controls, m_scratch, m_silence;
 };
 
@@ -251,6 +299,7 @@ struct Lv2World {
     LilvNode *audioPort = nullptr, *controlPort = nullptr, *atomPort = nullptr, *cvPort = nullptr;
     LilvNode *inputPort = nullptr, *outputPort = nullptr;
     LilvNode *sideChain = nullptr, *optional = nullptr;
+    LilvNode *integer = nullptr, *toggled = nullptr, *logarithmic = nullptr, *notOnGui = nullptr;
 };
 
 Lv2World &lv2() {
@@ -266,6 +315,10 @@ Lv2World &lv2() {
         w.outputPort = lilv_new_uri(w.world, LV2_CORE__OutputPort);
         w.sideChain = lilv_new_uri(w.world, LV2_CORE_PREFIX "isSideChain");
         w.optional = lilv_new_uri(w.world, LV2_CORE__connectionOptional);
+        w.integer = lilv_new_uri(w.world, LV2_CORE__integer);
+        w.toggled = lilv_new_uri(w.world, LV2_CORE__toggled);
+        w.logarithmic = lilv_new_uri(w.world, LV2_PORT_PROPS__logarithmic);
+        w.notOnGui = lilv_new_uri(w.world, LV2_PORT_PROPS__notOnGUI);
         return w;
     }();
     return w;
@@ -290,9 +343,49 @@ void countAudio(const LilvPlugin *plugin, int *in, int *out) {
     }
 }
 
+// Control inputs that the plugin marks as not for people, such as a host's
+// latency or free-wheeling switch, stay at their default and are left out.
+QVector<Param> lv2Params(const LilvPlugin *plugin) {
+    Lv2World &w = lv2();
+    const uint32_t n = lilv_plugin_get_num_ports(plugin);
+    std::vector<float> mins(n), maxs(n), defs(n);
+    lilv_plugin_get_port_ranges_float(plugin, mins.data(), maxs.data(), defs.data());
+    QVector<Param> params;
+    for (uint32_t i = 0; i < n; ++i) {
+        const LilvPort *port = lilv_plugin_get_port_by_index(plugin, i);
+        if (!lilv_port_is_a(plugin, port, w.controlPort) || !lilv_port_is_a(plugin, port, w.inputPort) ||
+            lilv_port_has_property(plugin, port, w.notOnGui))
+            continue;
+        Param param;
+        param.symbol = QString::fromUtf8(lilv_node_as_string(lilv_port_get_symbol(plugin, port)));
+        LilvNode *name = lilv_port_get_name(plugin, port);
+        param.name = name ? QString::fromUtf8(lilv_node_as_string(name)) : param.symbol;
+        lilv_node_free(name);
+        param.port = i;
+        param.integer = lilv_port_has_property(plugin, port, w.integer);
+        param.toggled = lilv_port_has_property(plugin, port, w.toggled);
+        param.logarithmic = lilv_port_has_property(plugin, port, w.logarithmic);
+        param.min = param.toggled ? 0 : std::isnan(mins[i]) ? -FLT_MAX : mins[i];
+        param.max = param.toggled ? 1 : std::isnan(maxs[i]) ? FLT_MAX : maxs[i];
+        param.def = clamp(param, std::isnan(defs[i]) ? (std::isnan(mins[i]) ? 0.f : mins[i]) : defs[i]);
+        if (LilvScalePoints *points = lilv_port_get_scale_points(plugin, port)) {
+            LILV_FOREACH (scale_points, it, points) {
+                const LilvScalePoint *point = lilv_scale_points_get(points, it);
+                param.options.append({lilv_node_as_float(lilv_scale_point_get_value(point)),
+                                      QString::fromUtf8(lilv_node_as_string(lilv_scale_point_get_label(point)))});
+            }
+            lilv_scale_points_free(points);
+            std::sort(param.options.begin(), param.options.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+        }
+        params << param;
+    }
+    return params;
+}
+
 class Lv2Instance : public Instance {
 public:
-    Lv2Instance(const LilvPlugin *plugin, double rate, QString *error) : m_silence(MaxBlock, 0.f), m_scratch(MaxBlock, 0.f) {
+    Lv2Instance(const LilvPlugin *plugin, double rate, const Values &values, QString *error)
+        : Instance(lilv_plugin_get_num_ports(plugin)), m_silence(MaxBlock, 0.f), m_scratch(MaxBlock, 0.f) {
         Lv2World &w = lv2();
         UridMap &urids = UridMap::shared();
         m_sequenceType = urids.map(LV2_ATOM__Sequence);
@@ -358,6 +451,15 @@ public:
                 p.role = Role::Other; // CV and anything unknown: fed silence
             }
         }
+        for (const Param &param : lv2Params(plugin))
+            if (values.contains(param.symbol))
+                m_ports[param.port].value = clamp(param, values[param.symbol]);
+        for (uint32_t i = 0; i < n; ++i) {
+            if (m_ports[i].role != Role::ControlIn)
+                continue;
+            set(i, m_ports[i].value);
+            m_controlIn.push_back(i);
+        }
 
         const bool stereo = m_audioIn.size() == 2 && m_audioOut.size() == 2;
         const int copies = stereo ? 1 : 2;
@@ -418,6 +520,8 @@ public:
         const bool stereo = m_copies.size() == 1;
         for (size_t k = 0; k < m_copies.size(); ++k) {
             Copy &c = m_copies[k];
+            for (uint32_t i : m_controlIn)
+                c.controls[i] = target(i);
             for (size_t i = 0; i < m_audioIn.size(); ++i) {
                 const size_t ch = stereo ? i : k;
                 lilv_instance_connect_port(c.instance, m_audioIn[i], const_cast<float *>(ch < 2 ? in[ch] : m_silence.data()));
@@ -458,12 +562,21 @@ private:
     std::vector<LV2_Feature> m_features;
     std::vector<const LV2_Feature *> m_featureList;
     std::vector<Port> m_ports;
-    std::vector<uint32_t> m_audioIn, m_audioOut;
+    std::vector<uint32_t> m_audioIn, m_audioOut, m_controlIn;
     std::vector<Copy> m_copies;
     std::vector<float> m_silence, m_scratch;
 };
 
 } // namespace
+
+float clamp(const Param &param, float value) {
+    if (std::isnan(value))
+        return param.def;
+    value = std::clamp(value, param.min, param.max);
+    if (param.toggled)
+        return value > (param.min + param.max) / 2 ? param.max : param.min;
+    return param.integer ? std::round(value) : value;
+}
 
 Catalog &Catalog::shared() {
     static Catalog catalog;
@@ -543,7 +656,26 @@ bool Catalog::find(const QString &id, Info *info) {
     return false;
 }
 
-std::unique_ptr<Instance> Catalog::instantiate(const QString &id, double sampleRate, QString *error) {
+QVector<Param> Catalog::params(const QString &id, double sampleRate) {
+    QMutexLocker lock(&m_mutex);
+    scan();
+    if (id.startsWith("lv2:")) {
+        Lv2World &w = lv2();
+        LilvNode *uri = lilv_new_uri(w.world, id.mid(4).toUtf8().constData());
+        const LilvPlugin *plugin = lilv_plugins_get_by_uri(lilv_world_get_all_plugins(w.world), uri);
+        lilv_node_free(uri);
+        return plugin ? lv2Params(plugin) : QVector<Param>();
+    }
+    if (id.startsWith("ladspa:")) {
+        const QString rest = id.mid(7);
+        const int split = rest.lastIndexOf(':');
+        const LadspaDescriptor *d = ladspaDescriptor(rest.left(split), rest.mid(split + 1));
+        return d ? ladspaParams(d, sampleRate) : QVector<Param>();
+    }
+    return {};
+}
+
+std::unique_ptr<Instance> Catalog::instantiate(const QString &id, double sampleRate, const Values &values, QString *error) {
     QMutexLocker lock(&m_mutex);
     scan();
     if (id.startsWith("lv2:")) {
@@ -563,7 +695,7 @@ std::unique_ptr<Instance> Catalog::instantiate(const QString &id, double sampleR
                 *error = QStringLiteral("not stereo");
             return nullptr;
         }
-        auto instance = std::make_unique<Lv2Instance>(plugin, sampleRate, error);
+        auto instance = std::make_unique<Lv2Instance>(plugin, sampleRate, values, error);
         return instance->ok() ? std::move(instance) : nullptr;
     }
     if (id.startsWith("ladspa:")) {
@@ -584,7 +716,7 @@ std::unique_ptr<Instance> Catalog::instantiate(const QString &id, double sampleR
                 *error = QStringLiteral("not stereo");
             return nullptr;
         }
-        auto instance = std::make_unique<LadspaInstance>(d, sampleRate, in == 2 ? 1 : 2);
+        auto instance = std::make_unique<LadspaInstance>(d, sampleRate, in == 2 ? 1 : 2, values);
         if (!instance->ok()) {
             if (error)
                 *error = QStringLiteral("could not start");

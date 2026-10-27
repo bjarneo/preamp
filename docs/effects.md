@@ -49,6 +49,19 @@ To add an effect:
 
 Click an effect to turn it off or on. Right-click it to remove it.
 
+## Effect controls
+
+Each effect starts with its own defaults. To change a control, list the controls of the effect, then set one by its symbol or its name:
+
+```sh
+preamp plugin params 1
+preamp plugin set 1 cr 6
+preamp plugin set 1 "Compression mode" Up
+preamp plugin set 1 cr default
+```
+
+A new value takes effect in the next block of audio. The effect keeps playing, so a compressor or a limiter does not reset. preamp keeps the values of each effect in the chain when it restarts.
+
 To get a compressor, a limiter and more, install `lsp-plugins-lv2`:
 
 ```sh
@@ -64,6 +77,8 @@ preamp plugins --available
 preamp plugin add "LSP Limiter"
 preamp plugin off 1
 preamp plugin move 2 1
+preamp plugin params 1
+preamp plugin set 1 cr 6
 preamp plugin remove 2
 ```
 
