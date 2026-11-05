@@ -31,8 +31,9 @@ struct Param {
     QString symbol; // the LV2 symbol, or the LADSPA port name in snake case
     QString name;   // what the plugin calls it
     uint32_t port = 0;
-    float min = 0, max = 1, def = 0; // an unbounded side is -/+FLT_MAX
+    float min = 0, max = 1, def = 0; // an unbounded side is -FLT_MAX or FLT_MAX
     bool integer = false, toggled = false, logarithmic = false;
+    bool enumeration = false;               // takes only the named values
     QVector<QPair<float, QString>> options; // the named values, in order
 };
 

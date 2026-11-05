@@ -40,7 +40,7 @@ preamp room studio                             # off, small room, studio or hall
 preamp app Spotify --volume 50                 # or --mute and --unmute
 preamp plugin add "LSP Compressor"             # see preamp plugins --available
 preamp plugin off 1                            # on N, off N, remove N, move N TO
-preamp plugin set 1 cr 6                       # see preamp plugin params 1; VALUE default resets
+preamp plugin set 1 cr 6                       # list them with plugin params 1, reset with default
 preamp pin                                     # apply this preset each time this output is picked
 preamp rule add call Discord --preset Podcast  # or fullscreen, then rule set N and rule remove N
 ```

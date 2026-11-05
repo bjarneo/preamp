@@ -64,6 +64,8 @@ public:
 
     // Main thread.
     void post(const Params &params);
+    // The daemon keeps pointers into the newest chain. Call this from
+    // Daemon::rebuildChain() only, which resets them first.
     void post(std::unique_ptr<Chain> chain);
     void collect();
     const Ring &ring() const { return m_ring; }

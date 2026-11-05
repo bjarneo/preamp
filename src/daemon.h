@@ -51,8 +51,10 @@ private:
         bool on = false;
         QString error;
         plugins::Values values = {}; // the controls set away from their default
-        // In the newest chain posted to the processor, which outlives this
-        // pointer: rebuildChain() replaces it before that chain can be freed.
+        // Points into the newest chain that rebuildChain() posted. The
+        // processor frees a chain only after a newer one arrives, and
+        // rebuildChain() resets this pointer before each post. Post a chain
+        // from rebuildChain() only.
         plugins::Instance *live = nullptr;
     };
     struct Output {

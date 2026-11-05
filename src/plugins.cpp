@@ -165,6 +165,23 @@ QString ladspaSymbol(const char *name) {
     return symbol;
 }
 
+// A plugin can give its bounds in the wrong order.
+void orderBounds(Param &param) {
+    if (param.min > param.max)
+        std::swap(param.min, param.max);
+}
+
+// Two port names can give the same symbol. The second one gets "_2".
+QString uniqueSymbol(const QString &symbol, const QVector<Param> &params) {
+    auto taken = [&](const QString &s) {
+        return std::any_of(params.begin(), params.end(), [&](const Param &p) { return p.symbol == s; });
+    };
+    QString unique = symbol;
+    for (int n = 2; taken(unique); ++n)
+        unique = QStringLiteral("%1_%2").arg(symbol).arg(n);
+    return unique;
+}
+
 QVector<Param> ladspaParams(const LadspaDescriptor *d, double rate) {
     QVector<Param> params;
     for (unsigned long p = 0; p < d->portCount; ++p) {
@@ -174,7 +191,7 @@ QVector<Param> ladspaParams(const LadspaDescriptor *d, double rate) {
         const LadspaRangeHint &hint = d->portRangeHints[p];
         const float scale = (hint.hints & HintSampleRate) ? float(rate) : 1.f;
         Param param;
-        param.symbol = ladspaSymbol(d->portNames[p]);
+        param.symbol = uniqueSymbol(ladspaSymbol(d->portNames[p]), params);
         param.name = QString::fromUtf8(d->portNames[p]);
         param.port = uint32_t(p);
         param.toggled = hint.hints & HintToggled;
@@ -182,6 +199,7 @@ QVector<Param> ladspaParams(const LadspaDescriptor *d, double rate) {
         param.logarithmic = hint.hints & HintLogarithmic;
         param.min = param.toggled ? 0 : (hint.hints & HintBelow) ? hint.lower * scale : -FLT_MAX;
         param.max = param.toggled ? 1 : (hint.hints & HintAbove) ? hint.upper * scale : FLT_MAX;
+        orderBounds(param);
         param.def = clamp(param, ladspaDefault(hint, rate));
         params << param;
     }
@@ -300,6 +318,7 @@ struct Lv2World {
     LilvNode *inputPort = nullptr, *outputPort = nullptr;
     LilvNode *sideChain = nullptr, *optional = nullptr;
     LilvNode *integer = nullptr, *toggled = nullptr, *logarithmic = nullptr, *notOnGui = nullptr;
+    LilvNode *enumeration = nullptr, *sampleRate = nullptr;
 };
 
 Lv2World &lv2() {
@@ -319,6 +338,8 @@ Lv2World &lv2() {
         w.toggled = lilv_new_uri(w.world, LV2_CORE__toggled);
         w.logarithmic = lilv_new_uri(w.world, LV2_PORT_PROPS__logarithmic);
         w.notOnGui = lilv_new_uri(w.world, LV2_PORT_PROPS__notOnGUI);
+        w.enumeration = lilv_new_uri(w.world, LV2_CORE__enumeration);
+        w.sampleRate = lilv_new_uri(w.world, LV2_CORE__sampleRate);
         return w;
     }();
     return w;
@@ -344,8 +365,9 @@ void countAudio(const LilvPlugin *plugin, int *in, int *out) {
 }
 
 // Control inputs that the plugin marks as not for people, such as a host's
-// latency or free-wheeling switch, stay at their default and are left out.
-QVector<Param> lv2Params(const LilvPlugin *plugin) {
+// latency or free-wheeling switch, stay at their default. This list leaves
+// them out.
+QVector<Param> lv2Params(const LilvPlugin *plugin, double rate) {
     Lv2World &w = lv2();
     const uint32_t n = lilv_plugin_get_num_ports(plugin);
     std::vector<float> mins(n), maxs(n), defs(n);
@@ -365,9 +387,13 @@ QVector<Param> lv2Params(const LilvPlugin *plugin) {
         param.integer = lilv_port_has_property(plugin, port, w.integer);
         param.toggled = lilv_port_has_property(plugin, port, w.toggled);
         param.logarithmic = lilv_port_has_property(plugin, port, w.logarithmic);
-        param.min = param.toggled ? 0 : std::isnan(mins[i]) ? -FLT_MAX : mins[i];
-        param.max = param.toggled ? 1 : std::isnan(maxs[i]) ? FLT_MAX : maxs[i];
-        param.def = clamp(param, std::isnan(defs[i]) ? (std::isnan(mins[i]) ? 0.f : mins[i]) : defs[i]);
+        // lv2:sampleRate gives the bounds as a part of the sample rate, so
+        // 0.5 is the Nyquist frequency.
+        const float scale = lilv_port_has_property(plugin, port, w.sampleRate) ? float(rate) : 1.f;
+        param.min = param.toggled ? 0 : std::isnan(mins[i]) ? -FLT_MAX : mins[i] * scale;
+        param.max = param.toggled ? 1 : std::isnan(maxs[i]) ? FLT_MAX : maxs[i] * scale;
+        orderBounds(param);
+        param.def = clamp(param, (std::isnan(defs[i]) ? (std::isnan(mins[i]) ? 0.f : mins[i]) : defs[i]) * scale);
         if (LilvScalePoints *points = lilv_port_get_scale_points(plugin, port)) {
             LILV_FOREACH (scale_points, it, points) {
                 const LilvScalePoint *point = lilv_scale_points_get(points, it);
@@ -377,6 +403,7 @@ QVector<Param> lv2Params(const LilvPlugin *plugin) {
             lilv_scale_points_free(points);
             std::sort(param.options.begin(), param.options.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
         }
+        param.enumeration = !param.options.isEmpty() && lilv_port_has_property(plugin, port, w.enumeration);
         params << param;
     }
     return params;
@@ -451,9 +478,9 @@ public:
                 p.role = Role::Other; // CV and anything unknown: fed silence
             }
         }
-        for (const Param &param : lv2Params(plugin))
-            if (values.contains(param.symbol))
-                m_ports[param.port].value = clamp(param, values[param.symbol]);
+        // A listed control starts at the default that pluginParams reports.
+        for (const Param &param : lv2Params(plugin, rate))
+            m_ports[param.port].value = values.contains(param.symbol) ? clamp(param, values[param.symbol]) : param.def;
         for (uint32_t i = 0; i < n; ++i) {
             if (m_ports[i].role != Role::ControlIn)
                 continue;
@@ -567,14 +594,32 @@ private:
     std::vector<float> m_silence, m_scratch;
 };
 
+// "lv2:URI" names an LV2 plugin.
+const LilvPlugin *lv2Plugin(const QString &id) {
+    Lv2World &w = lv2();
+    LilvNode *uri = lilv_new_uri(w.world, id.mid(4).toUtf8().constData());
+    const LilvPlugin *plugin = lilv_plugins_get_by_uri(lilv_world_get_all_plugins(w.world), uri);
+    lilv_node_free(uri);
+    return plugin;
+}
+
+// "ladspa:FILE:LABEL" names a LADSPA plugin.
+const LadspaDescriptor *ladspaPlugin(const QString &id) {
+    const QString rest = id.mid(7);
+    const int split = rest.lastIndexOf(':');
+    return ladspaDescriptor(rest.left(split), rest.mid(split + 1));
+}
+
 } // namespace
 
 float clamp(const Param &param, float value) {
     if (std::isnan(value))
         return param.def;
-    value = std::clamp(value, param.min, param.max);
+    // std::clamp needs the low bound first.
+    value = std::clamp(value, std::min(param.min, param.max), std::max(param.min, param.max));
+    // LADSPA and LV2 take a switch as on above 0.
     if (param.toggled)
-        return value > (param.min + param.max) / 2 ? param.max : param.min;
+        return value > 0 ? param.max : param.min;
     return param.integer ? std::round(value) : value;
 }
 
@@ -660,16 +705,11 @@ QVector<Param> Catalog::params(const QString &id, double sampleRate) {
     QMutexLocker lock(&m_mutex);
     scan();
     if (id.startsWith("lv2:")) {
-        Lv2World &w = lv2();
-        LilvNode *uri = lilv_new_uri(w.world, id.mid(4).toUtf8().constData());
-        const LilvPlugin *plugin = lilv_plugins_get_by_uri(lilv_world_get_all_plugins(w.world), uri);
-        lilv_node_free(uri);
-        return plugin ? lv2Params(plugin) : QVector<Param>();
+        const LilvPlugin *plugin = lv2Plugin(id);
+        return plugin ? lv2Params(plugin, sampleRate) : QVector<Param>();
     }
     if (id.startsWith("ladspa:")) {
-        const QString rest = id.mid(7);
-        const int split = rest.lastIndexOf(':');
-        const LadspaDescriptor *d = ladspaDescriptor(rest.left(split), rest.mid(split + 1));
+        const LadspaDescriptor *d = ladspaPlugin(id);
         return d ? ladspaParams(d, sampleRate) : QVector<Param>();
     }
     return {};
@@ -679,10 +719,7 @@ std::unique_ptr<Instance> Catalog::instantiate(const QString &id, double sampleR
     QMutexLocker lock(&m_mutex);
     scan();
     if (id.startsWith("lv2:")) {
-        Lv2World &w = lv2();
-        LilvNode *uri = lilv_new_uri(w.world, id.mid(4).toUtf8().constData());
-        const LilvPlugin *plugin = lilv_plugins_get_by_uri(lilv_world_get_all_plugins(w.world), uri);
-        lilv_node_free(uri);
+        const LilvPlugin *plugin = lv2Plugin(id);
         if (!plugin) {
             if (error)
                 *error = QStringLiteral("not installed");
@@ -699,9 +736,7 @@ std::unique_ptr<Instance> Catalog::instantiate(const QString &id, double sampleR
         return instance->ok() ? std::move(instance) : nullptr;
     }
     if (id.startsWith("ladspa:")) {
-        const QString rest = id.mid(7);
-        const int split = rest.lastIndexOf(':');
-        const LadspaDescriptor *d = ladspaDescriptor(rest.left(split), rest.mid(split + 1));
+        const LadspaDescriptor *d = ladspaPlugin(id);
         if (!d) {
             if (error)
                 *error = QStringLiteral("not installed");

@@ -78,7 +78,7 @@ preamp plugin add "LSP Limiter"
 preamp plugin off 1
 preamp plugin move 2 1
 preamp plugin params 1
-preamp plugin set 1 cr 6
+preamp plugin set 1 th 0.5
 preamp plugin remove 2
 ```
 

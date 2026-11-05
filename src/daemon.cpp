@@ -287,11 +287,12 @@ void Daemon::pushDsp() {
 }
 
 void Daemon::rebuildChain() {
-    for (Plugin &p : m_plugins)
-        p.live = nullptr;
+    // Without a rate, nothing is posted. The chain that plays stays live.
     const double rate = m_engine.sampleRate();
     if (rate <= 0)
         return;
+    for (Plugin &p : m_plugins)
+        p.live = nullptr;
     auto chain = std::make_unique<dsp::Chain>();
     for (Plugin &p : m_plugins) {
         p.error.clear();
@@ -1191,10 +1192,12 @@ QJsonObject Daemon::handle(const QJsonObject &m) {
                                         {"min", p.min},
                                         {"max", p.max},
                                         {"default", p.def},
-                                        {"value", plugin.values.value(p.symbol, p.def)},
+                                        // The effect runs with the stored value held in range.
+                                        {"value", plugins::clamp(p, plugin.values.value(p.symbol, p.def))},
                                         {"integer", p.integer},
                                         {"toggled", p.toggled},
                                         {"logarithmic", p.logarithmic},
+                                        {"enumeration", p.enumeration},
                                         {"options", options}});
             }
             return ok({{"params", list}});
@@ -1204,6 +1207,8 @@ QJsonObject Daemon::handle(const QJsonObject &m) {
         if (param == params.end())
             return fail(QStringLiteral("%1 has no control named %2").arg(plugin.name, symbol));
         // Without a value, the control goes back to its default.
+        if (m.contains("value") && !m.value("value").isDouble())
+            return fail("value is not a number");
         const float value = m.contains("value") ? plugins::clamp(*param, float(m.value("value").toDouble())) : param->def;
         if (value == param->def)
             plugin.values.remove(symbol);

@@ -216,15 +216,43 @@ private slots:
         mode.integer = true;
         QCOMPARE(plugins::clamp(mode, 2.6f), 3.f);
 
+        // LADSPA and LV2 take a switch as on above 0.
         plugins::Param toggle;
         toggle.toggled = true;
         QCOMPARE(plugins::clamp(toggle, 0.7f), 1.f);
-        QCOMPARE(plugins::clamp(toggle, 0.2f), 0.f);
+        QCOMPARE(plugins::clamp(toggle, 0.2f), 1.f);
+        QCOMPARE(plugins::clamp(toggle, 0.f), 0.f);
+        QCOMPARE(plugins::clamp(toggle, -1.f), 0.f);
 
         plugins::Param open;
         open.min = -FLT_MAX;
         open.max = FLT_MAX;
         QCOMPARE(plugins::clamp(open, -1e6f), -1e6f);
+
+        // A plugin can give its bounds in the wrong order.
+        plugins::Param reversed;
+        reversed.min = 10;
+        reversed.max = 0;
+        QCOMPARE(plugins::clamp(reversed, 20), 10.f);
+        QCOMPARE(plugins::clamp(reversed, -5), 0.f);
+    }
+
+    void effectControlsKnowTheirNamedValues() {
+        const QString id = QStringLiteral("lv2:http://lsp-plug.in/plugins/lv2/limiter_stereo");
+        if (!plugins::Catalog::shared().find(id, nullptr))
+            QSKIP("lsp-plugins-lv2 is not installed");
+        const QVector<plugins::Param> params = plugins::Catalog::shared().params(id, 48000);
+        auto named = [&](const char *symbol) {
+            return std::find_if(params.begin(), params.end(), [&](const plugins::Param &p) { return p.symbol == symbol; });
+        };
+        const auto mode = named("mode");
+        QVERIFY(mode != params.end());
+        QVERIFY(mode->enumeration);
+        QCOMPARE(mode->options.size(), 12);
+        const auto threshold = named("th");
+        QVERIFY(threshold != params.end());
+        QVERIFY(!threshold->enumeration);
+        QVERIFY(threshold->min < threshold->max);
     }
 
     void effectControlChangesTheSoundWhileItPlays() {

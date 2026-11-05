@@ -102,8 +102,18 @@ bool number(const QString &text, double low, double high, const QString &what, d
 }
 
 // A control of an effect, as `preamp plugin params` lists it. A side
-// without a bound comes as +/-FLT_MAX.
+// without a bound comes as -FLT_MAX or FLT_MAX.
 bool bounded(double v) { return std::abs(v) < 1e38; }
+
+// Finds the named value `text`, in any case.
+bool option(const QJsonObject &param, const QString &text, double *value) {
+    for (const auto &o : param.value("options").toArray())
+        if (o.toObject().value("label").toString().compare(text, Qt::CaseInsensitive) == 0) {
+            *value = o.toObject().value("value").toDouble();
+            return true;
+        }
+    return false;
+}
 
 QString formatParam(const QJsonObject &param, double value) {
     if (param.value("toggled").toBool())
@@ -140,18 +150,24 @@ bool paramValue(const QJsonObject &param, const QString &text, double *value) {
         err(QStringLiteral("%1 is on or off").arg(param.value("name").toString()));
         return false;
     }
+    if (option(param, text, value))
+        return true;
+    // A list of named values takes only those names or their numbers.
     const QJsonArray options = param.value("options").toArray();
-    QStringList labels;
-    for (const auto &o : options) {
-        if (o.toObject().value("label").toString().compare(text, Qt::CaseInsensitive) == 0) {
-            *value = o.toObject().value("value").toDouble();
-            return true;
+    if (param.value("enumeration").toBool() && !options.isEmpty()) {
+        bool ok = false;
+        const float number = text.toFloat(&ok);
+        QStringList labels;
+        for (const auto &o : options) {
+            if (ok && float(o.toObject().value("value").toDouble()) == number) {
+                *value = number;
+                return true;
+            }
+            labels << o.toObject().value("label").toString();
         }
-        labels << o.toObject().value("label").toString();
-    }
-    // A list of named values takes only those names.
-    if (param.value("integer").toBool() && !labels.isEmpty()) {
-        err(QStringLiteral("%1 is %2 or %3").arg(param.value("name").toString(), labels.mid(0, labels.size() - 1).join(", "), labels.last()));
+        const QString name = param.value("name").toString(), last = labels.takeLast();
+        err(labels.isEmpty() ? QStringLiteral("%1 is %2").arg(name, last)
+                             : QStringLiteral("%1 is %2 or %3").arg(name, labels.join(", "), last));
         return false;
     }
     const double min = param.value("min").toDouble(), max = param.value("max").toDouble();
@@ -946,10 +962,15 @@ int run(const QStringList &argv) {
             }
             const QString wanted = args.value(3);
             const QString text = args.mid(4).join(' ');
+            // A symbol match wins over a name match. Else the first name wins.
             QJsonObject param;
             for (const auto &v : params) {
                 const QJsonObject p = v.toObject();
-                if (p.value("symbol").toString() == wanted || p.value("name").toString().compare(wanted, Qt::CaseInsensitive) == 0)
+                if (p.value("symbol").toString() == wanted) {
+                    param = p;
+                    break;
+                }
+                if (param.isEmpty() && p.value("name").toString().compare(wanted, Qt::CaseInsensitive) == 0)
                     param = p;
             }
             if (param.isEmpty() || text.isEmpty()) {
@@ -958,8 +979,10 @@ int run(const QStringList &argv) {
                 return 1;
             }
             QJsonObject m{{"cmd", "setPluginParam"}, {"i", i}, {"param", param.value("symbol").toString()}};
-            if (text != "default") {
-                double value = 0;
+            // "default" resets the control, in any case. A named value called
+            // "default" wins over the reset.
+            double value = 0;
+            if (text.compare("default", Qt::CaseInsensitive) != 0 || option(param, text, &value)) {
                 if (!paramValue(param, text, &value))
                     return 1;
                 m.insert("value", value);
