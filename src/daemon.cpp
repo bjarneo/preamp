@@ -205,6 +205,9 @@ void Daemon::load() {
     for (const auto &v : o.value("plugins").toArray()) {
         const QJsonObject p = v.toObject();
         Plugin plugin{p.value("id").toString(), p.value("name").toString(), p.value("kind").toString(), p.value("on").toBool(), QString()};
+        const QJsonObject params = p.value("params").toObject();
+        for (auto it = params.begin(); it != params.end(); ++it)
+            plugin.values.insert(it.key(), float(it.value().toDouble()));
         if (!plugin.id.isEmpty())
             m_plugins << plugin;
     }
@@ -244,8 +247,16 @@ void Daemon::save() {
         rules.append(QJsonObject{{"kind", r.kind}, {"when", r.when}, {"then", r.then}, {"room", r.room}});
     o.insert("rules", rules);
     QJsonArray plugins;
-    for (const Plugin &p : std::as_const(m_plugins))
-        plugins.append(QJsonObject{{"id", p.id}, {"name", p.name}, {"kind", p.kind}, {"on", p.on}});
+    for (const Plugin &p : std::as_const(m_plugins)) {
+        QJsonObject plugin{{"id", p.id}, {"name", p.name}, {"kind", p.kind}, {"on", p.on}};
+        if (!p.values.isEmpty()) {
+            QJsonObject params;
+            for (auto it = p.values.begin(); it != p.values.end(); ++it)
+                params.insert(it.key(), it.value());
+            plugin.insert("params", params);
+        }
+        plugins.append(plugin);
+    }
     o.insert("plugins", plugins);
     o.insert("room", roomName(m_room));
     o.insert("width", m_width);
@@ -276,6 +287,8 @@ void Daemon::pushDsp() {
 }
 
 void Daemon::rebuildChain() {
+    for (Plugin &p : m_plugins)
+        p.live = nullptr;
     const double rate = m_engine.sampleRate();
     if (rate <= 0)
         return;
@@ -285,10 +298,11 @@ void Daemon::rebuildChain() {
         if (!p.on)
             continue;
         QString error;
-        auto instance = plugins::Catalog::shared().instantiate(p.id, rate, &error);
-        if (instance)
+        auto instance = plugins::Catalog::shared().instantiate(p.id, rate, p.values, &error);
+        if (instance) {
+            p.live = instance.get();
             chain->instances.push_back(std::move(instance));
-        else
+        } else
             p.error = error.isEmpty() ? QStringLiteral("failed") : error;
     }
     m_processor.post(std::move(chain));
@@ -1158,6 +1172,47 @@ QJsonObject Daemon::handle(const QJsonObject &m) {
         rebuildChain();
         changed(false);
         return ok();
+    }
+    if (cmd == "pluginParams" || cmd == "setPluginParam") {
+        const int i = m.value("i").toInt(-1);
+        if (i < 0 || i >= m_plugins.size())
+            return fail("no plugin at that place");
+        Plugin &plugin = m_plugins[i];
+        const double rate = m_engine.sampleRate() > 0 ? m_engine.sampleRate() : 48000;
+        const QVector<plugins::Param> params = plugins::Catalog::shared().params(plugin.id, rate);
+        if (cmd == "pluginParams") {
+            QJsonArray list;
+            for (const plugins::Param &p : params) {
+                QJsonArray options;
+                for (const auto &[value, label] : p.options)
+                    options.append(QJsonObject{{"value", value}, {"label", label}});
+                list.append(QJsonObject{{"symbol", p.symbol},
+                                        {"name", p.name},
+                                        {"min", p.min},
+                                        {"max", p.max},
+                                        {"default", p.def},
+                                        {"value", plugin.values.value(p.symbol, p.def)},
+                                        {"integer", p.integer},
+                                        {"toggled", p.toggled},
+                                        {"logarithmic", p.logarithmic},
+                                        {"options", options}});
+            }
+            return ok({{"params", list}});
+        }
+        const QString symbol = m.value("param").toString();
+        const auto param = std::find_if(params.begin(), params.end(), [&](const plugins::Param &p) { return p.symbol == symbol; });
+        if (param == params.end())
+            return fail(QStringLiteral("%1 has no control named %2").arg(plugin.name, symbol));
+        // Without a value, the control goes back to its default.
+        const float value = m.contains("value") ? plugins::clamp(*param, float(m.value("value").toDouble())) : param->def;
+        if (value == param->def)
+            plugin.values.remove(symbol);
+        else
+            plugin.values.insert(symbol, value);
+        if (plugin.live)
+            plugin.live->set(param->port, value);
+        changed(false);
+        return ok({{"value", value}});
     }
     if (cmd == "pin") {
         if (m_output.isEmpty())

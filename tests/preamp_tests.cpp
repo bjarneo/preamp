@@ -3,6 +3,7 @@
 #include <QPainter>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <cfloat>
 #include <cmath>
 
 #include "analyzer.h"
@@ -11,6 +12,7 @@
 #include "dsp.h"
 #include "eq.h"
 #include "graph.h"
+#include "plugins.h"
 #include "theme.h"
 #include "translator.h"
 
@@ -198,6 +200,61 @@ private slots:
         }
         QVERIFY(std::abs(peakOf(outL, 4800) - 0.25) < 0.01);
         QVERIFY(std::abs(peakOf(outR, 4800) - 0.5) < 0.01);
+    }
+
+    void effectControlsStayInTheirRange() {
+        plugins::Param ratio;
+        ratio.min = 1;
+        ratio.max = 100;
+        ratio.def = 4;
+        QCOMPARE(plugins::clamp(ratio, 500), 100.f);
+        QCOMPARE(plugins::clamp(ratio, 0), 1.f);
+        QCOMPARE(plugins::clamp(ratio, 2.5f), 2.5f);
+        QCOMPARE(plugins::clamp(ratio, NAN), 4.f);
+
+        plugins::Param mode = ratio;
+        mode.integer = true;
+        QCOMPARE(plugins::clamp(mode, 2.6f), 3.f);
+
+        plugins::Param toggle;
+        toggle.toggled = true;
+        QCOMPARE(plugins::clamp(toggle, 0.7f), 1.f);
+        QCOMPARE(plugins::clamp(toggle, 0.2f), 0.f);
+
+        plugins::Param open;
+        open.min = -FLT_MAX;
+        open.max = FLT_MAX;
+        QCOMPARE(plugins::clamp(open, -1e6f), -1e6f);
+    }
+
+    void effectControlChangesTheSoundWhileItPlays() {
+        const QString id = QStringLiteral("lv2:http://lsp-plug.in/plugins/lv2/compressor_stereo");
+        if (!plugins::Catalog::shared().find(id, nullptr))
+            QSKIP("lsp-plugins-lv2 is not installed");
+        const QVector<plugins::Param> params = plugins::Catalog::shared().params(id, 48000);
+        const auto gain = std::find_if(params.begin(), params.end(), [](const plugins::Param &p) { return p.symbol == "g_out"; });
+        QVERIFY(gain != params.end());
+        QCOMPARE(gain->def, 1.f);
+
+        QString error;
+        auto instance = plugins::Catalog::shared().instantiate(id, 48000, {}, &error);
+        QVERIFY2(instance, qPrintable(error));
+        // Far below the threshold, so the compressor only applies its gains.
+        const auto in = sine(1000, 0.02, 48000);
+        auto play = [&] {
+            std::vector<float> l(in.size()), r(in.size());
+            for (size_t at = 0; at < in.size(); at += 1024) {
+                const uint32_t n = uint32_t(std::min<size_t>(1024, in.size() - at));
+                const float *src[2] = {in.data() + at, in.data() + at};
+                float *dst[2] = {l.data() + at, r.data() + at};
+                instance->run(src, dst, n);
+            }
+            return peakOf(l, 24000);
+        };
+        const double before = play();
+        instance->set(gain->port, 0.5f);
+        const double after = play();
+        QVERIFY2(std::abs(after / before - 0.5) < 0.02, qPrintable(QString("%1 -> %2").arg(before).arg(after)));
     }
 
     void analyzerFindsATone() {
