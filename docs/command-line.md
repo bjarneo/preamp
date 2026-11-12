@@ -88,6 +88,8 @@ The limits for a band are:
 | `preamp plugin params N` | List the controls of effect `N` with their values and ranges |
 | `preamp plugin set N NAME VALUE` | Set a control of effect `N`. `NAME` is the symbol or the name from `params`. `VALUE` is a number, `on` or `off` for a switch, or the name of a value in a list. |
 | `preamp plugin set N NAME default` | Set a control of effect `N` back to its default |
+| `preamp plugin ui N` | Open the plugin's own window for effect `N`, if it has one |
+| `preamp plugin outputs N` | Show the meters and other values that effect `N` reports, such as the gain reduction of a compressor |
 
 Effects and rules count from 1, in the order that `preamp plugins` and `preamp rules` show.
 

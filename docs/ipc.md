@@ -106,6 +106,7 @@ The service keeps the values in range. A gain is -12 to 12 dB, a frequency is 20
 | `movePlugin` | `i`, `to` | |
 | `pluginParams` | `i` | `params`: the controls of effect `i`, each with `symbol`, `name`, `min`, `max`, `default`, `value`, `integer`, `toggled`, `logarithmic`, `enumeration` and `options`, a list of `value` and `label`. When `enumeration` is true, the control takes only the values in `options`. A side without a bound is ±3.4e38. |
 | `setPluginParam` | `i`, `param`: a `symbol` from `pluginParams`, `value`: a number. Without `value`, the control goes back to its default. | `value`: the value after it is held in range |
+| `pluginOutputs` | `i` | `outputs`: the meters and other values effect `i` reports, each with `symbol`, `name` and `value`, the value of the newest block. `live` is false, and no output has a `value`, while the effect is off or fails to start. |
 
 ### Rules
 

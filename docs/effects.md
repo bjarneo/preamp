@@ -62,6 +62,26 @@ preamp plugin set 1 cr default
 
 A new value takes effect in the next block of audio. The effect keeps playing, so a compressor or a limiter does not reset. preamp keeps the values of each effect in the chain when it restarts.
 
+## Plugin windows
+
+Many LV2 effects, for example the LSP plugins, come with a window of their own. To open it:
+
+```sh
+preamp plugin ui 1
+```
+
+The window floats. A knob turned in the window sets the control in preamp, and a control set from the command line moves the knob in the window. The meters in the window move with the sound. The window closes when you remove the effect or the service stops. A second `preamp plugin ui` for the same effect brings the open window forward.
+
+The window runs in a process of its own, so a crash in a plugin window does not stop the sound. Plugin windows use X11, so they need XWayland, which Omarchy runs by default. Graphs that a plugin draws from data it sends as messages, such as the time graph of the LSP compressor, stay empty for now. LADSPA effects have no window.
+
+To read the meters without the window, for example the gain reduction of a compressor:
+
+```sh
+preamp plugin outputs 1
+```
+
+To place the windows with a Hyprland window rule, match the class `preamp-plugin`.
+
 To get a compressor, a limiter and more, install `lsp-plugins-lv2`:
 
 ```sh

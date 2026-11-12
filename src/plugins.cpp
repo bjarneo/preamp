@@ -220,6 +220,9 @@ public:
                     m_audioOut.push_back(p);
             }
         }
+        for (unsigned long p = 0; p < d->portCount; ++p)
+            if ((d->portDescriptors[p] & PortControl) && (d->portDescriptors[p] & PortOutput))
+                m_controlOut.push_back(p);
         for (const Param &param : ladspaParams(d, rate)) {
             m_controls[param.port] = values.contains(param.symbol) ? clamp(param, values[param.symbol]) : param.def;
             set(param.port, m_controls[param.port]);
@@ -265,12 +268,15 @@ public:
             }
             m_descriptor->run(h, frames);
         }
+        // The copies share the control ports, so the last one run reports.
+        for (unsigned long p : m_controlOut)
+            publish(uint32_t(p), m_controls[p]);
     }
 
 private:
     const LadspaDescriptor *m_descriptor;
     std::vector<LadspaHandle> m_handles;
-    std::vector<unsigned long> m_audioIn, m_audioOut, m_controlIn;
+    std::vector<unsigned long> m_audioIn, m_audioOut, m_controlIn, m_controlOut;
     std::vector<float> m_controls, m_scratch, m_silence;
 };
 
@@ -482,6 +488,10 @@ public:
         for (const Param &param : lv2Params(plugin, rate))
             m_ports[param.port].value = values.contains(param.symbol) ? clamp(param, values[param.symbol]) : param.def;
         for (uint32_t i = 0; i < n; ++i) {
+            if (m_ports[i].role == Role::ControlOut) {
+                publish(i, m_ports[i].value);
+                m_controlOut.push_back(i);
+            }
             if (m_ports[i].role != Role::ControlIn)
                 continue;
             set(i, m_ports[i].value);
@@ -568,6 +578,10 @@ public:
             }
             lilv_instance_run(c.instance, frames);
         }
+        // A mono plugin runs once per channel. The left copy reports.
+        if (!m_copies.empty())
+            for (uint32_t i : m_controlOut)
+                publish(i, m_copies.front().controls[i]);
     }
 
 private:
@@ -589,7 +603,7 @@ private:
     std::vector<LV2_Feature> m_features;
     std::vector<const LV2_Feature *> m_featureList;
     std::vector<Port> m_ports;
-    std::vector<uint32_t> m_audioIn, m_audioOut, m_controlIn;
+    std::vector<uint32_t> m_audioIn, m_audioOut, m_controlIn, m_controlOut;
     std::vector<Copy> m_copies;
     std::vector<float> m_silence, m_scratch;
 };
@@ -713,6 +727,45 @@ QVector<Param> Catalog::params(const QString &id, double sampleRate) {
         return d ? ladspaParams(d, sampleRate) : QVector<Param>();
     }
     return {};
+}
+
+QVector<Output> Catalog::outputs(const QString &id) {
+    QMutexLocker lock(&m_mutex);
+    scan();
+    QVector<Output> list;
+    if (id.startsWith("lv2:")) {
+        const LilvPlugin *plugin = lv2Plugin(id);
+        if (!plugin)
+            return list;
+        Lv2World &w = lv2();
+        for (uint32_t i = 0; i < lilv_plugin_get_num_ports(plugin); ++i) {
+            const LilvPort *port = lilv_plugin_get_port_by_index(plugin, i);
+            if (!lilv_port_is_a(plugin, port, w.controlPort) || !lilv_port_is_a(plugin, port, w.outputPort))
+                continue;
+            Output o;
+            o.symbol = QString::fromUtf8(lilv_node_as_string(lilv_port_get_symbol(plugin, port)));
+            LilvNode *name = lilv_port_get_name(plugin, port);
+            o.name = name ? QString::fromUtf8(lilv_node_as_string(name)) : o.symbol;
+            lilv_node_free(name);
+            o.port = i;
+            list << o;
+        }
+    } else if (id.startsWith("ladspa:")) {
+        const LadspaDescriptor *d = ladspaPlugin(id);
+        if (!d)
+            return list;
+        QVector<Param> taken; // the symbols already given out
+        for (unsigned long p = 0; p < d->portCount; ++p) {
+            const int pd = d->portDescriptors[p];
+            if (!(pd & PortControl) || !(pd & PortOutput))
+                continue;
+            Param param;
+            param.symbol = uniqueSymbol(ladspaSymbol(d->portNames[p]), taken);
+            taken << param;
+            list << Output{param.symbol, QString::fromUtf8(d->portNames[p]), uint32_t(p)};
+        }
+    }
+    return list;
 }
 
 std::unique_ptr<Instance> Catalog::instantiate(const QString &id, double sampleRate, const Values &values, QString *error) {

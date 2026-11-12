@@ -5,9 +5,10 @@ pkgdesc='System audio equalizer for Omarchy'
 url='https://github.com/bjarneo/preamp'
 arch=('x86_64' 'aarch64')
 license=('MIT')
-depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'pipewire' 'wireplumber' 'lilv')
+depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'pipewire' 'wireplumber' 'lilv' 'libxcb')
 makedepends=('gcc' 'make' 'lv2')
-optdepends=('lsp-plugins-lv2: compressor, limiter and other effects for the chain')
+optdepends=('lsp-plugins-lv2: compressor, limiter and other effects for the chain'
+            'xorg-xwayland: plugin windows')
 source=()
 sha256sums=()
 

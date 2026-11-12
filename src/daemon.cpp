@@ -1219,6 +1219,21 @@ QJsonObject Daemon::handle(const QJsonObject &m) {
         changed(false);
         return ok({{"value", value}});
     }
+    if (cmd == "pluginOutputs") {
+        const int i = m.value("i").toInt(-1);
+        if (i < 0 || i >= m_plugins.size())
+            return fail("no plugin at that place");
+        const Plugin &plugin = m_plugins[i];
+        // An effect that is off or failed to start reports no values.
+        QJsonArray list;
+        for (const plugins::Output &o : plugins::Catalog::shared().outputs(plugin.id)) {
+            QJsonObject entry{{"symbol", o.symbol}, {"name", o.name}};
+            if (plugin.live && std::isfinite(plugin.live->output(o.port)))
+                entry.insert("value", plugin.live->output(o.port));
+            list.append(entry);
+        }
+        return ok({{"outputs", list}, {"live", plugin.live != nullptr}});
+    }
     if (cmd == "pin") {
         if (m_output.isEmpty())
             return fail("no output");
