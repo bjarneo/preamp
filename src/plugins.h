@@ -37,6 +37,14 @@ struct Param {
     QVector<QPair<float, QString>> options; // the named values, in order
 };
 
+// A control output of an effect: a meter, a gain reduction or a state the
+// plugin reports. The plugin's own window draws these.
+struct Output {
+    QString symbol;
+    QString name;
+    uint32_t port = 0;
+};
+
 // Values by symbol. A control without one keeps its default.
 using Values = QHash<QString, float>;
 
@@ -58,13 +66,22 @@ public:
             m_targets[port].store(value, std::memory_order_relaxed);
     }
 
+    // Main thread. The newest value of a control output, as the last block
+    // left it.
+    float output(uint32_t port) const {
+        return port < m_outputs.size() ? m_outputs[port].load(std::memory_order_relaxed) : 0.f;
+    }
+
 protected:
-    // One target per port. Only control inputs read theirs.
-    explicit Instance(size_t ports) : m_targets(ports) {}
+    // One target and one output per port. Only control inputs read their
+    // target, and only control outputs publish.
+    explicit Instance(size_t ports) : m_targets(ports), m_outputs(ports) {}
     float target(uint32_t port) const { return m_targets[port].load(std::memory_order_relaxed); }
+    void publish(uint32_t port, float value) { m_outputs[port].store(value, std::memory_order_relaxed); }
 
 private:
     std::vector<std::atomic<float>> m_targets;
+    std::vector<std::atomic<float>> m_outputs;
 };
 
 class Catalog {
@@ -76,6 +93,8 @@ public:
     bool find(const QString &id, Info *info);
     // The control inputs, in port order. Empty for an unknown plugin.
     QVector<Param> params(const QString &id, double sampleRate);
+    // The control outputs, in port order. Empty for an unknown plugin.
+    QVector<Output> outputs(const QString &id);
     // Starts with `values` in place of the defaults.
     std::unique_ptr<Instance> instantiate(const QString &id, double sampleRate, const Values &values, QString *error);
 

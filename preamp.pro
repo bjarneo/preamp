@@ -1,7 +1,7 @@
 QT += core gui qml quick network dbus
 
 CONFIG += c++20 release link_pkgconfig
-PKGCONFIG += libpipewire-0.3 lilv-0
+PKGCONFIG += libpipewire-0.3 lilv-0 xcb
 TARGET = preamp
 TEMPLATE = app
 
@@ -21,6 +21,7 @@ HEADERS += \
     src/hyprland.h \
     src/ipc.h \
     src/plugins.h \
+    src/pluginui.h \
     src/pwengine.h \
     src/theme.h \
     src/translator.h
@@ -39,6 +40,7 @@ SOURCES += \
     src/ipc.cpp \
     src/main.cpp \
     src/plugins.cpp \
+    src/pluginui.cpp \
     src/pwengine.cpp \
     src/theme.cpp \
     src/translator.cpp

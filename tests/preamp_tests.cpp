@@ -285,6 +285,30 @@ private slots:
         QVERIFY2(std::abs(after / before - 0.5) < 0.02, qPrintable(QString("%1 -> %2").arg(before).arg(after)));
     }
 
+    void effectReportsItsMeters() {
+        const QString id = QStringLiteral("lv2:http://lsp-plug.in/plugins/lv2/compressor_stereo");
+        if (!plugins::Catalog::shared().find(id, nullptr))
+            QSKIP("lsp-plugins-lv2 is not installed");
+        const QVector<plugins::Output> outputs = plugins::Catalog::shared().outputs(id);
+        const auto meter = std::find_if(outputs.begin(), outputs.end(), [](const plugins::Output &o) { return o.symbol == "ilm_l"; });
+        QVERIFY(meter != outputs.end());
+
+        QString error;
+        auto instance = plugins::Catalog::shared().instantiate(id, 48000, {}, &error);
+        QVERIFY2(instance, qPrintable(error));
+        QCOMPARE(instance->output(meter->port), 0.f);
+        // The input meter reads the peak of a block: a 0.5 sine shows close to 0.5.
+        const auto in = sine(1000, 0.5, 4096);
+        std::vector<float> l(in.size()), r(in.size());
+        for (size_t at = 0; at < in.size(); at += 1024) {
+            const float *src[2] = {in.data() + at, in.data() + at};
+            float *dst[2] = {l.data() + at, r.data() + at};
+            instance->run(src, dst, 1024);
+        }
+        const float level = instance->output(meter->port);
+        QVERIFY2(std::abs(level - 0.5f) < 0.05f, qPrintable(QString::number(level)));
+    }
+
     void analyzerFindsATone() {
         Analyzer a;
         const auto s = sine(1000, 0.5, Analyzer::Size);

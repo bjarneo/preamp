@@ -2,6 +2,7 @@
 
 #include "daemon.h"
 #include "ipc.h"
+#include "pluginui.h"
 #include "translator.h"
 
 #include <QCoreApplication>
@@ -438,6 +439,8 @@ void printHelp() {
         "  preamp plugin on|off|remove N       switch on, switch off or remove effect N\n"
         "  preamp plugin move N TO             move effect N to place TO\n"
         "  preamp plugin params N              list the controls of effect N\n"
+        "  preamp plugin ui N                  open the window of effect N, if the plugin has one\n"
+        "  preamp plugin outputs N             show the meters and other values effect N reports\n"
         "  preamp plugin set N NAME VALUE|default\n"
         "                                      set a control of effect N, or reset it\n"
         "\n"
@@ -937,9 +940,33 @@ int run(const QStringList &argv) {
         }
         int i = 0;
         if ((action == "on" || action == "off" || action == "remove" || action == "move" || action == "params" ||
-             action == "set") &&
+             action == "set" || action == "ui" || action == "outputs") &&
             !place(args.value(2), int(chain.size()), "effect", &i))
             return 1;
+        if (action == "ui")
+            return pluginui::run(i);
+        if (action == "outputs") {
+            const QJsonObject r = send({{"cmd", "pluginOutputs"}, {"i", i}});
+            if (!r.value("ok").toBool())
+                return finish(r, json, {});
+            const QJsonArray outputs = r.value("outputs").toArray();
+            if (json) {
+                out(pretty(outputs));
+                return 0;
+            }
+            if (outputs.isEmpty())
+                out(QStringLiteral("Effect %1 reports nothing.").arg(i + 1));
+            else if (!r.value("live").toBool())
+                out(QStringLiteral("Effect %1 is off, so it reports no values.").arg(i + 1));
+            for (const auto &v : outputs) {
+                const QJsonObject o = v.toObject();
+                out(QStringLiteral("%1  %2  %3")
+                        .arg(o.value("symbol").toString(),
+                             o.contains("value") ? QString::number(o.value("value").toDouble(), 'g', 5) : QStringLiteral("-"),
+                             o.value("name").toString()));
+            }
+            return 0;
+        }
         if (action == "params" || action == "set") {
             const QJsonObject r = send({{"cmd", "pluginParams"}, {"i", i}});
             if (!r.value("ok").toBool())
@@ -1008,7 +1035,7 @@ int run(const QStringList &argv) {
             return finish(send({{"cmd", "movePlugin"}, {"i", i}, {"to", to}}), json,
                           QStringLiteral("Moved effect %1 to place %2.").arg(i + 1).arg(to + 1));
         }
-        err("usage: preamp plugin add ID|NAME | on|off|remove|params N | move N TO | set N NAME VALUE");
+        err("usage: preamp plugin add ID|NAME | on|off|remove|params|outputs|ui N | move N TO | set N NAME VALUE");
         return 1;
     }
 
